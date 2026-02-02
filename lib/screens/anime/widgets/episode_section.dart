@@ -225,6 +225,7 @@ class _EpisodeSectionState extends State<EpisodeSection> {
           return EpisodeListBuilder(
             episodeList: snapshot.data ?? widget.episodeList?.value ?? [],
             anilistData: widget.anilistData,
+            isDub: isDub,
           );
         },
       );
@@ -360,6 +361,35 @@ class _EpisodeSectionState extends State<EpisodeSection> {
                   ],
                 )),
           ],
+          const SizedBox(height: 20),
+          // Dub Toggle and Episode Filters
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Dub Toggle
+              Obx(() => Row(
+                    children: [
+                      const Icon(HugeIcons.strokeRoundedMic01),
+                      const SizedBox(width: 10),
+                      AnymexText(
+                        text: "Dub",
+                        variant: TextVariant.bold,
+                        color: isDub.value
+                            ? context.colors.primary
+                            : context.colors.onSurface,
+                      ),
+                      const SizedBox(width: 10),
+                      Switch(
+                        value: isDub.value,
+                        onChanged: (val) {
+                          isDub.value = val;
+                        },
+                        activeColor: context.colors.primary,
+                      ),
+                    ],
+                  )),
+            ],
+          ),
           const SizedBox(height: 20),
           // Episode List
           Column(
