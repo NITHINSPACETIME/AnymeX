@@ -64,7 +64,11 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
             .cast<String>()
             .toList();
 
-        malImages = images;
+        if (mounted) {
+          setState(() {
+            malImages = images;
+          });
+        }
       }
     } catch (e) {
       debugPrint("Error fetching MAL visuals: $e");
@@ -79,8 +83,10 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
 
       if (searchResponse.statusCode == 200) {
         final searchDoc = parser.parse(searchResponse.body);
-        final firstResult = searchDoc.querySelector('.anime-item > a');
-        final animePath = firstResult?.attributes['href'];
+        final firstResult = searchDoc.querySelector('.anime-item');
+        
+        final linkElement = firstResult?.querySelector('.anime-item__body__title a');
+        final animePath = linkElement?.attributes['href'];
 
         if (animePath != null) {
           final visualsUrl = 'https://www.livechart.me$animePath/visuals';
@@ -96,7 +102,11 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
                 .cast<String>()
                 .toList();
 
-            liveChartImages = images;
+            if (mounted) {
+              setState(() {
+                liveChartImages = images;
+              });
+            }
           }
         }
       }
@@ -126,8 +136,6 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
     return Glow(
       child: Scaffold(
         body: Column(
@@ -145,7 +153,7 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
                             _buildSourceHeader(
                               context, 
                               "LiveChart.me", 
-                              "https://www.livechart.me/assets/favicon-32x32-159670067664654d008434827d057a6e60b2964e52c6f140685955694c965706.png"
+                              "https://www.livechart.me/favicon_32x32.png"
                             ),
                             const SizedBox(height: 10),
                             _buildImageGrid(liveChartImages),
@@ -191,7 +199,12 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
             color: Theme.of(context).colorScheme.surfaceContainer,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Image.network(iconUrl, height: 20, width: 20),
+          child: CachedNetworkImage(
+            imageUrl: iconUrl, 
+            height: 20, 
+            width: 20,
+            errorWidget: (context, url, error) => const Icon(Icons.image, size: 20),
+          ),
         ),
         const SizedBox(width: 10),
         AnymexText(
@@ -222,7 +235,10 @@ class _AnimeVisualsPageState extends State<AnimeVisualsPage> {
                GestureDetector(
                  onTap: () => Get.back(),
                  child: InteractiveViewer(
-                   child: CachedNetworkImage(imageUrl: images[index]),
+                   child: CachedNetworkImage(
+                     imageUrl: images[index],
+                     placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                   ),
                  ),
                ),
                barrierColor: Colors.black87,
