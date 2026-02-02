@@ -52,6 +52,7 @@ class _EpisodeListBuilderState extends State<EpisodeListBuilder> {
   final offlineStorage = Get.find<OfflineStorageController>();
 
   final RxBool isLogged = false.obs;
+  final RxBool? isDub;
   final RxInt userProgress = 0.obs;
   final Rx<Episode> selectedEpisode = Episode(number: "1").obs;
   final Rx<Episode> continueEpisode = Episode(number: "1").obs;
@@ -245,6 +246,17 @@ class _EpisodeListBuilderState extends State<EpisodeListBuilder> {
                               ?.map((e) => hive.Video.fromVideo(e))
                               .toList() ??
                           [];
+                      if (widget.isDub?.value == true) {
+                        final dubStreams = streamList
+                            .where((s) =>
+                                s.quality.toLowerCase().contains('dub') ||
+                                s.url.toLowerCase().contains('dub'))
+                            .toList();
+
+                        if (dubStreams.isNotEmpty) {
+                          streamList.value = dubStreams;
+                        }
+                      }
                       return _buildServerList();
                     }
                   },
