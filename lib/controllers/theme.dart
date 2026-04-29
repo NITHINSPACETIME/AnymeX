@@ -1,10 +1,10 @@
 import 'package:anymex/constants/contants.dart';
 import 'package:anymex/constants/themes.dart';
+import 'package:anymex/database/data_keys/keys.dart';
 import 'package:flutter/material.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/services.dart';
-import 'package:hive/hive.dart';
 
 class ThemeProvider extends ChangeNotifier {
   bool isLightMode;
@@ -20,15 +20,11 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeProvider()
       : _seedColor = Colors.indigo,
-        isLightMode =
-            Hive.box("themeData").get("isLightMode", defaultValue: false),
-        isSystemMode =
-            Hive.box("themeData").get("isSystemMode", defaultValue: false),
-        isOled = Hive.box("themeData").get("isOled", defaultValue: false),
-        selectedVariantIndex =
-            Hive.box("themeData").get("selectedVariantIndex", defaultValue: 4),
-        currentThemeMode =
-            Hive.box("themeData").get("themeMode", defaultValue: "default") {
+        isLightMode = ThemeKeys.isLightMode.get<bool>(false),
+        isSystemMode = ThemeKeys.isSystemMode.get<bool>(false),
+        isOled = ThemeKeys.isOled.get<bool>(false),
+        selectedVariantIndex = ThemeKeys.selectedVariantIndex.get<int>(0),
+        currentThemeMode = ThemeKeys.themeMode.get<String>("default") {
     _determineSeedColor();
     _updateTheme();
   }
@@ -42,15 +38,14 @@ class ThemeProvider extends ChangeNotifier {
     } else if (currentThemeMode == "material") {
       loadDynamicTheme();
     } else {
-      final box = Hive.box("themeData");
-      int colorIndex = box.get("customColorIndex", defaultValue: 0);
+      int colorIndex = ThemeKeys.customColorIndex.get<int>(0);
       _seedColor = colorList[colorIndex];
     }
   }
 
   Future<void> loadDynamicTheme() async {
     currentThemeMode = "material";
-    Hive.box("themeData").put("themeMode", "material");
+    ThemeKeys.themeMode.set("material");
     final corePalette = await DynamicColorPlugin.getCorePalette();
     _seedColor = corePalette != null
         ? Color(corePalette.primary.get(40))
@@ -59,7 +54,7 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   void updateSchemeVariant(int index) {
-    Hive.box("themeData").put("selectedVariantIndex", index);
+    ThemeKeys.selectedVariantIndex.set(index);
     selectedVariantIndex = index;
     _updateTheme();
   }
@@ -67,56 +62,60 @@ class ThemeProvider extends ChangeNotifier {
   void toggleTheme() {
     isLightMode = !isLightMode;
     isSystemMode = false;
-    Hive.box("themeData").put("isSystemMode", isSystemMode);
-    Hive.box("themeData").put("isLightMode", isLightMode);
+    ThemeKeys.isSystemMode.set(isSystemMode);
+    ThemeKeys.isLightMode.set(isLightMode);
     _updateTheme();
   }
 
   void setSystemMode() {
     isSystemMode = true;
-    Hive.box("themeData").put("isSystemMode", isSystemMode);
+    ThemeKeys.isSystemMode.set(isSystemMode);
     notifyListeners();
   }
 
   void setLightMode() {
     isLightMode = true;
-    Hive.box("themeData").put("isLightMode", true);
+    ThemeKeys.isLightMode.set(true);
     _updateTheme();
   }
 
   void setDarkMode() {
     isLightMode = false;
     isSystemMode = false;
-    Hive.box("themeData").put("isSystemMode", isSystemMode);
-    Hive.box("themeData").put("isLightMode", false);
+    ThemeKeys.isSystemMode.set(isSystemMode);
+    ThemeKeys.isLightMode.set(false);
     _updateTheme();
   }
 
   void setDefaultTheme() {
     currentThemeMode = "default";
-    Hive.box("themeData").put("themeMode", "default");
+    ThemeKeys.themeMode.set("default");
     _seedColor = Colors.indigo;
     _updateTheme();
   }
 
   void setCustomSeedColor(int index) {
     currentThemeMode = "custom";
-    Hive.box("themeData")
-      ..put("themeMode", "custom")
-      ..put("customColorIndex", index);
+    ThemeKeys.themeMode.set("custom");
+    ThemeKeys.customColorIndex.set(index);
     _seedColor = colorList[index];
     _updateTheme();
   }
 
   void toggleOled(bool value) {
     isOled = value;
-    Hive.box("themeData").put("isOled", value);
+    ThemeKeys.isOled.set(value);
     _updateTheme();
   }
 
   void syncStatusBar() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
         systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarIconBrightness:
+            isLightMode ? Brightness.dark : Brightness.light,
         statusBarColor: Colors.transparent,
         statusBarBrightness: isLightMode ? Brightness.dark : Brightness.light,
         statusBarIconBrightness:
@@ -124,11 +123,15 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   void clearCache() {
-    final box = Hive.box("themeData");
-    box.clear();
+    ThemeKeys.isLightMode.delete();
+    ThemeKeys.isSystemMode.delete();
+    ThemeKeys.isOled.delete();
+    ThemeKeys.selectedVariantIndex.delete();
+    ThemeKeys.themeMode.delete();
+    ThemeKeys.customColorIndex.delete();
     isLightMode = false;
     isSystemMode = false;
-    Hive.box("themeData").put("isSystemMode", isSystemMode);
+    ThemeKeys.isSystemMode.set(isSystemMode);
     isOled = false;
     selectedVariantIndex = 0;
     currentThemeMode = "default";

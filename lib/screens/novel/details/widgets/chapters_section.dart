@@ -1,4 +1,6 @@
-import 'package:anymex/models/Offline/Hive/chapter.dart';
+import 'package:anymex/controllers/offline/offline_storage_controller.dart';
+import 'package:anymex/controllers/service_handler/service_handler.dart';
+import 'package:anymex/database/isar_models/chapter.dart';
 import 'package:anymex/screens/manga/widgets/chapter_ranges.dart';
 import 'package:anymex/screens/novel/details/controller/details_controller.dart';
 import 'package:anymex/screens/novel/details/widgets/chapter_item.dart';
@@ -7,7 +9,7 @@ import 'package:anymex/utils/string_extensions.dart';
 import 'package:anymex/widgets/animation/animations.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
-import 'package:dartotsu_extension_bridge/Models/DEpisode.dart';
+import 'package:anymex_extension_runtime_bridge/Models/DEpisode.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -26,7 +28,8 @@ class ChapterSliverSection extends StatefulWidget {
 class _ChapterSliverSectionState extends State<ChapterSliverSection> {
   final chunkedChapters = <List<Chapter>>[].obs;
   final filteredChapters = <Chapter>[].obs;
-  final selectedChunkIndex = 0.obs;
+  final selectedChunkIndex = 1.obs;
+  bool _initializedChunk = false;
 
   @override
   void initState() {
@@ -57,9 +60,36 @@ class _ChapterSliverSectionState extends State<ChapterSliverSection> {
       chunkedChapters.value = chunkChapter(
           chaptersForChunking, calculateChapterChunkSize(chaptersForChunking));
 
+      if (chunkedChapters.isNotEmpty && !_initializedChunk) {
+        final auth = Get.find<ServiceHandler>();
+        final userProgress =
+            _getUserProgress(auth, widget.controller.media.value.id);
+
+        final chunkIndex = findChapterChunkIndexFromProgress(
+          userProgress,
+          chunkedChapters.value,
+        );
+        selectedChunkIndex.value =
+            chunkIndex.clamp(1, chunkedChapters.value.length - 1);
+        _initializedChunk = true;
+      }
+
       if (chunkedChapters.isNotEmpty) {
         filteredChapters.value = chunkedChapters[selectedChunkIndex.value];
       }
+    }
+  }
+
+  int _getUserProgress(ServiceHandler auth, String mediaId) {
+    if (auth.isLoggedIn.value &&
+        auth.serviceType.value != ServicesType.extensions) {
+      final tracked =
+          auth.onlineService.mangaList.firstWhereOrNull((e) => e.id == mediaId);
+      return tracked?.chapterCount?.toInt() ?? 1;
+    } else {
+      final offlineStorage = Get.find<OfflineStorageController>();
+      final saved = offlineStorage.getMangaById(mediaId);
+      return saved?.currentChapter?.number?.toInt() ?? 1;
     }
   }
 
@@ -69,73 +99,52 @@ class _ChapterSliverSectionState extends State<ChapterSliverSection> {
 
   @override
   Widget build(BuildContext context) {
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(
-          child: 20.height(),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0),
-            child: Row(
-              children: [
-                const AnymexText(
-                  text: "Chapters",
-                  variant: TextVariant.bold,
-                  size: 18,
-                ),
-                const Spacer(),
-                IconButton(
-                    onPressed: sortToggle, icon: const Icon(Icons.sort_rounded))
-              ],
-            ),
+    return Column(
+      children: [
+        20.height(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          child: Row(
+            children: [
+              const AnymexText(
+                text: "Chapters",
+                variant: TextVariant.bold,
+                size: 18,
+              ),
+              const Spacer(),
+              IconButton(
+                  onPressed: sortToggle, icon: const Icon(Icons.sort_rounded))
+            ],
           ),
         ),
-        SliverToBoxAdapter(
-          child: 5.height(),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 20.0),
-            child: Obx(() {
-              selectedChunkIndex.value;
-              if (chunkedChapters.isEmpty) return const SizedBox.shrink();
+        5.height(),
+        Padding(
+          padding: const EdgeInsets.only(left: 20.0),
+          child: Obx(() {
+            selectedChunkIndex.value;
+            if (chunkedChapters.isEmpty) return const SizedBox.shrink();
 
-              return ChapterRanges(
-                selectedChunkIndex: selectedChunkIndex,
-                onChunkSelected: (v) {},
-                chunks: chunkedChapters.value,
-              );
-            }),
-          ),
+            return ChapterRanges(
+              selectedChunkIndex: selectedChunkIndex,
+              onChunkSelected: (v) {
+                selectedChunkIndex.value = v;
+              },
+              chunks: chunkedChapters.value,
+            );
+          }),
         ),
-        SliverToBoxAdapter(
-          child: 20.height(),
-        ),
-        SliverPadding(
+        20.height(),
+        Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10.0),
-          sliver: Obx(() {
+          child: Obx(() {
             if (filteredChapters.isEmpty) {
-              return const SliverToBoxAdapter(child: SizedBox.shrink());
+              return const SizedBox.shrink();
             }
 
-            return SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final chapter = filteredChapters[index];
-                  return AnimatedItemWrapper(
-                    child: ChapterListItem(
-                      controller: widget.controller,
-                      onTap: () {
-                        widget.controller.goToReader(chapter,
-                            filteredChapters: filteredChapters);
-                      },
-                      chapter: chapter,
-                    ),
-                  );
-                },
-                childCount: filteredChapters.length,
-              ),
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: filteredChapters.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: getResponsiveCrossAxisCount(
                   context,
@@ -149,6 +158,19 @@ class _ChapterSliverSectionState extends State<ChapterSliverSection> {
                 crossAxisSpacing: 15,
                 mainAxisSpacing: 15,
               ),
+              itemBuilder: (context, index) {
+                final chapter = filteredChapters[index];
+                return AnimatedItemWrapper(
+                  child: ChapterListItem(
+                    controller: widget.controller,
+                    onTap: () {
+                      widget.controller.goToReader(chapter,
+                          filteredChapters: filteredChapters);
+                    },
+                    chapter: chapter,
+                  ),
+                );
+              },
             );
           }),
         ),

@@ -3,8 +3,14 @@ import 'dart:io';
 
 import 'package:anymex/constants/contants.dart';
 import 'package:anymex/controllers/settings/settings.dart';
-import 'package:anymex/database/data_keys/player.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/screens/anime/watch/controller/player_controller.dart';
+import 'package:anymex/screens/anime/watch/controls/themes/setup/media_indicator_theme_registry.dart';
+import 'package:anymex/screens/anime/watch/controls/themes/setup/player_control_theme_registry.dart';
 import 'package:anymex/screens/other_features.dart';
+import 'package:anymex/screens/settings/sub_settings/widgets/settings_json_shared.dart';
+import 'package:anymex/utils/player_core_visual_settings.dart';
+import 'package:anymex/utils/subtitle_style_renderer.dart';
 import 'package:anymex/utils/subtitle_translator.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/checkmark_tile.dart';
@@ -19,8 +25,13 @@ import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
-import 'package:outlined_text/outlined_text.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
+
+const Map<String, List<String>> fontGroups = {
+  'Default': ['Default'],
+  'Latin': ['Trebuchet', 'Bahnschrift', 'Tahoma', 'Anime Ace 3', 'Poppins'],
+  'Japanese': ['Cinecaption'],
+};
 
 class SettingsPlayer extends StatefulWidget {
   final bool isModal;
@@ -44,6 +55,18 @@ class _BottomControl {
   });
 }
 
+class _DecoderOption {
+  final String value;
+  final String title;
+  final String description;
+
+  const _DecoderOption({
+    required this.value,
+    required this.title,
+    required this.description,
+  });
+}
+
 final List<_BottomControl> _bottomControls = [
   const _BottomControl(
       id: 'playlist',
@@ -53,14 +76,14 @@ final List<_BottomControl> _bottomControls = [
   const _BottomControl(
       id: 'shaders', name: 'Shaders', icon: Symbols.tune_rounded),
   const _BottomControl(
-      id: 'subtitles', name: 'Subtitles', icon: Symbols.subtitles_rounded),
+      id: 'source', name: 'Source', icon: Symbols.cloud_rounded),
   const _BottomControl(
-      id: 'server', name: 'Server', icon: Symbols.cloud_rounded),
+      id: 'tracks',
+      name: 'Tracks (Audio/Subs)',
+      icon: Symbols.library_music_rounded),
   const _BottomControl(
-      id: 'quality', name: 'Quality', icon: Symbols.high_quality_rounded),
+      id: 'sync_subs', name: 'Sync Subs', icon: Symbols.sync_rounded),
   const _BottomControl(id: 'speed', name: 'Speed', icon: Symbols.speed_rounded),
-  const _BottomControl(
-      id: 'audio_track', name: 'Audio Track', icon: Symbols.music_note_rounded),
   const _BottomControl(
       id: 'orientation',
       name: 'Orientation',
@@ -82,6 +105,8 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
   late List<String> _rightButtonIds;
   late List<String> _hiddenButtonIds;
   late Map<String, dynamic> _buttonConfigs;
+  bool _shouldApplyResizeModeOnClose = false;
+  late bool _useLibass;
 
   @override
   void initState() {
@@ -93,9 +118,10 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
     _rightButtonIds = [];
     _hiddenButtonIds = [];
     _buttonConfigs = {};
+    _useLibass = PlayerKeys.useLibass.get<bool>(false);
 
     final String jsonString =
-        settings.preferences.get('bottomControlsSettings', defaultValue: '{}');
+        PlayerUiKeys.bottomControlsSettings.get<String>('{}');
     final Map<String, dynamic> decodedConfig = json.decode(jsonString);
 
     if (decodedConfig.isEmpty) _initializeDefaultButtonLayout();
@@ -113,7 +139,61 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
         _bottomControls.isNotEmpty) {
       _initializeDefaultButtonLayout();
     } else {
+      _migrateLegacyButtons();
       _pruneRemovedButtons();
+    }
+  }
+
+  void _migrateLegacyButtons() {
+    final legacyToNew = {
+      'server': 'source',
+      'subtitles': 'tracks',
+      'audio_track': 'tracks',
+      'quality': 'source',
+    };
+
+    bool migrated = false;
+
+    void replaceInList(List<String> list) {
+      for (int i = 0; i < list.length; i++) {
+        if (legacyToNew.containsKey(list[i])) {
+          list[i] = legacyToNew[list[i]]!;
+          migrated = true;
+        }
+      }
+    }
+
+    replaceInList(_leftButtonIds);
+    replaceInList(_rightButtonIds);
+    replaceInList(_hiddenButtonIds);
+
+    final seen = <String>{};
+    void deduplicate(List<String> list) {
+      list.removeWhere((id) {
+        if (seen.contains(id)) {
+          migrated = true;
+          return true;
+        }
+        seen.add(id);
+        return false;
+      });
+    }
+
+    deduplicate(_leftButtonIds);
+    deduplicate(_rightButtonIds);
+    deduplicate(_hiddenButtonIds);
+
+    final essential = ['source', 'tracks', 'sync_subs'];
+    for (final id in essential) {
+      if (!seen.contains(id)) {
+        _rightButtonIds.add(id);
+        _buttonConfigs[id] = {'visible': true};
+        migrated = true;
+      }
+    }
+
+    if (migrated) {
+      _saveButtonConfig();
     }
   }
 
@@ -124,8 +204,7 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
       'hiddenButtonIds': _hiddenButtonIds,
       'buttonConfigs': _buttonConfigs,
     };
-    settings.preferences
-        .put('bottomControlsSettings', json.encode(configToSave));
+    PlayerUiKeys.bottomControlsSettings.set(json.encode(configToSave));
     if (mounted) {
       setState(() {});
     }
@@ -277,6 +356,34 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
         });
   }
 
+  void _showPlayerControlThemeDialog() {
+    showSelectionDialog<String>(
+      title: 'Control Theme',
+      items: PlayerControlThemeRegistry.themes.map((e) => e.id).toList(),
+      selectedItem: settings.playerControlThemeRx,
+      getTitle: (id) => PlayerControlThemeRegistry.resolve(id).name,
+      onItemSelected: (id) {
+        settings.playerControlTheme = id;
+        setState(() {});
+      },
+      leadingIcon: Icons.style_rounded,
+    );
+  }
+
+  void _showMediaIndicatorThemeDialog() {
+    showSelectionDialog<String>(
+      title: 'Swipe Indicator Theme',
+      items: MediaIndicatorThemeRegistry.themes.map((e) => e.id).toList(),
+      selectedItem: settings.mediaIndicatorThemeRx,
+      getTitle: (id) => MediaIndicatorThemeRegistry.resolve(id).name,
+      onItemSelected: (id) {
+        settings.mediaIndicatorTheme = id;
+        setState(() {});
+      },
+      leadingIcon: Icons.tune_rounded,
+    );
+  }
+
   void _showResizeModeDialog() {
     final currentFit = settings.resizeMode;
     final selectedLabel = resizeModeList.firstWhere(
@@ -293,14 +400,32 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
       getTitle: (item) => item,
       onItemSelected: (selected) {
         final fit = resizeModes[selected];
-        if (fit != null) settings.resizeMode = fit.name;
+        if (fit != null) {
+          settings.resizeMode = fit.name;
+          _shouldApplyResizeModeOnClose = true;
+        }
       },
       leadingIcon: Icons.crop,
     );
   }
 
-  void _showColorSelectionDialog(
-      String title, Color currentColor, Function(String) onColorSelected) {
+  @override
+  void dispose() {
+    final shouldApplyResizeOnClose =
+        widget.isModal && _shouldApplyResizeModeOnClose;
+    super.dispose();
+    if (!shouldApplyResizeOnClose) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!Get.isRegistered<PlayerController>()) return;
+      final controller = Get.find<PlayerController>();
+      if (controller.isClosed) return;
+      controller.applyConfiguredResizeMode();
+    });
+  }
+
+  void _showColorSelectionDialog(String title, Color currentColor,
+      Function(String) onColorSelected, Map<String, Color> options) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -317,7 +442,7 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
             width: double.maxFinite,
             child: SuperListView(
               physics: const BouncingScrollPhysics(),
-              children: colorOptions.entries.map((entry) {
+              children: options.entries.map((entry) {
                 return RadioListTile<Color>(
                   title: Text(entry.key),
                   value: entry.value,
@@ -344,12 +469,222 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
       selectedItem: settings.playerSettings.value.translateTo.obs,
       getTitle: (code) => SubtitleTranslator.languages[code]!,
       onItemSelected: (code) {
-        final current = settings.playerSettings.value;
-        current.translateTo = code;
-        settings.playerSettings.value = current;
-        settings.playerSettings.refresh();
+        settings.playerSettings.update((s) => s?.translateTo = code);
+        PlayerSettingsKeys.translateTo.set(code);
         setState(() {});
       },
+    );
+  }
+
+  void _showFontSelectionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Select Subtitle Font"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: fontGroups.entries.map((group) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(group.key,
+                        style: TextStyle(
+                            color: context.colors.primary,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  ...group.value.map((font) => ListTile(
+                        title: Text(font),
+                        onTap: () {
+                          final current = settings.playerSettings.value;
+                          current.subtitleFont = font;
+                          PlayerSettingsKeys.subtitleFont.set(font);
+                          settings.playerSettings.refresh();
+                          Navigator.pop(context);
+                        },
+                        trailing: settings.playerSettings.value.subtitleFont ==
+                                font
+                            ? Icon(Icons.check, color: context.colors.primary)
+                            : null,
+                      )),
+                  const Divider(),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showOutlineTypeDialog() {
+    final currentType = normalizeSubtitleOutlineType(
+        settings.playerSettings.value.subtitleOutlineType);
+    if (currentType != settings.playerSettings.value.subtitleOutlineType) {
+      settings.playerSettings
+          .update((s) => s?.subtitleOutlineType = currentType);
+      PlayerSettingsKeys.subtitleOutlineType.set(currentType);
+    }
+
+    showSelectionDialog<String>(
+      title: "Outline Type",
+      items: subtitleOutlineTypes,
+      selectedItem: currentType.obs,
+      getTitle: (v) => v,
+      onItemSelected: (v) {
+        final current = settings.playerSettings.value;
+        current.subtitleOutlineType = v;
+        PlayerSettingsKeys.subtitleOutlineType.set(v);
+        settings.playerSettings.refresh();
+      },
+    );
+  }
+
+  bool _isUsingMpvEngine() {
+    if (!Platform.isAndroid && !Platform.isIOS) return true;
+    return PlayerKeys.useMediaKit.get<bool>(false);
+  }
+
+  bool get _supportsDecoderSelection =>
+      Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isLinux ||
+      Platform.isMacOS ||
+      Platform.isWindows;
+
+  List<_DecoderOption> get _decoderOptions {
+    if (Platform.isAndroid) {
+      return const [
+        _DecoderOption(
+          value: 'hw+',
+          title: 'HW+',
+          description: 'mediacodec-copy',
+        ),
+        _DecoderOption(
+          value: 'hw',
+          title: 'HW',
+          description: 'mediacodec',
+        ),
+        _DecoderOption(
+          value: 'sw',
+          title: 'SW',
+          description: 'no',
+        ),
+      ];
+    }
+
+    if (Platform.isIOS || Platform.isMacOS) {
+      return const [
+        _DecoderOption(
+          value: 'hw',
+          title: 'HW',
+          description: 'videotoolbox',
+        ),
+        _DecoderOption(
+          value: 'sw',
+          title: 'SW',
+          description: 'no',
+        ),
+      ];
+    }
+
+    if (Platform.isWindows) {
+      return const [
+        _DecoderOption(
+          value: 'hw',
+          title: 'HW',
+          description: 'd3d11va',
+        ),
+        _DecoderOption(
+          value: 'sw',
+          title: 'SW',
+          description: 'no',
+        ),
+      ];
+    }
+
+    if (Platform.isLinux) {
+      return const [
+        _DecoderOption(
+          value: 'hw',
+          title: 'HW',
+          description: 'vaapi',
+        ),
+        _DecoderOption(
+          value: 'sw',
+          title: 'SW',
+          description: 'no',
+        ),
+      ];
+    }
+
+    return const [
+      _DecoderOption(
+        value: 'hw',
+        title: 'HW',
+        description: 'auto',
+      ),
+      _DecoderOption(
+        value: 'sw',
+        title: 'SW',
+        description: 'no',
+      ),
+    ];
+  }
+
+  String _decoderTitle(String value) {
+    final match = _decoderOptions.firstWhere(
+      (option) => option.value == value,
+      orElse: () => _decoderOptions.first,
+    );
+    return match.title;
+  }
+
+  String _decoderDescription(String value) {
+    final match = _decoderOptions.firstWhere(
+      (option) => option.value == value,
+      orElse: () => _decoderOptions.first,
+    );
+    return match.description;
+  }
+
+  void _showDecoderModeDialog() {
+    final options = _decoderOptions;
+    if (options.isEmpty) return;
+
+    showSelectionDialog<String>(
+      title: 'Decoder',
+      items: options.map((option) => option.value).toList(),
+      selectedItem: settings.hardwareDecoder.obs,
+      getTitle: _decoderTitle,
+      onItemSelected: (value) {
+        settings.hardwareDecoder = value;
+        setState(() {});
+      },
+      leadingIcon: Icons.memory_rounded,
+    );
+  }
+
+  void _showMpvCoreSelectionDialog({
+    required String title,
+    required List<String> items,
+    required String selected,
+    required String Function(String) getTitle,
+    required String key,
+  }) {
+    showSelectionDialog<String>(
+      title: title,
+      items: items,
+      selectedItem: selected.obs,
+      getTitle: getTitle,
+      onItemSelected: (value) {
+        PlayerCoreVisualSettings.setMpvCoreSetting(key, value);
+        setState(() {});
+      },
+      leadingIcon: Icons.tune_rounded,
     );
   }
 
@@ -357,9 +692,6 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
   Widget build(BuildContext context) {
     return Glow(
         child: Scaffold(
-            //	backgroundColor: widget.isModal
-            //  ? context.colors.surfaceContainer
-            //  : Colors.transparent,
             body: Column(children: [
       if (!widget.isModal) const NestedHeader(title: 'Player Settings'),
       Expanded(
@@ -381,48 +713,286 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
               Obx(() => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (_supportsDecoderSelection)
+                        AnymexExpansionTile(
+                            title: 'Playback',
+                            initialExpanded: true,
+                            content: Column(
+                              children: [
+                                CustomTile(
+                                  padding: 10,
+                                  icon: Icons.memory_rounded,
+                                  title: 'Decoder',
+                                  isDescBold: true,
+                                  descColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary,
+                                  description:
+                                      _decoderDescription(settings.hardwareDecoder),
+                                  onTap: _showDecoderModeDialog,
+                                ),
+                              ],
+                            )),
+                      AnymexExpansionTile(
+                          title: 'Experimental',
+                          initialExpanded: false,
+                          content: Builder(builder: (context) {
+                            final experimentalEnabled = PlayerUiKeys
+                                .playerExperimentalEnabled
+                                .get<bool>(false);
+                            final mpvCore =
+                                PlayerCoreVisualSettings.getMpvCoreSettings();
+
+                            return Column(
+                              children: [
+                                CustomSwitchTile(
+                                  padding: const EdgeInsets.all(10),
+                                  icon: Icons.science_outlined,
+                                  title: 'Enable Experimental Settings',
+                                  description:
+                                      'Required for Core and Visual tuning. Keep off on low-end devices.',
+                                  switchValue: experimentalEnabled,
+                                  onChanged: (val) {
+                                    PlayerUiKeys.playerExperimentalEnabled
+                                        .set<bool>(val);
+                                    setState(() {});
+                                  },
+                                ),
+                                if (!experimentalEnabled)
+                                  _buildExperimentalGateMessage(
+                                      'Core and Visual settings are disabled. Enable Experimental to use them.'),
+                                if (experimentalEnabled && _isUsingMpvEngine())
+                                  Column(
+                                    children: [
+                                      CustomTile(
+                                        padding: 10,
+                                        icon: Icons.sync_rounded,
+                                        title: 'Video Sync',
+                                        isDescBold: true,
+                                        descColor: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        description:
+                                            (mpvCore['videoSync'] as String?) ??
+                                                'audio',
+                                        onTap: () =>
+                                            _showMpvCoreSelectionDialog(
+                                          title: 'Video Sync',
+                                          items: const [
+                                            'audio',
+                                            'display-resample',
+                                            'display-vdrop',
+                                            'display-adrop',
+                                          ],
+                                          selected: (mpvCore['videoSync']
+                                                  as String?) ??
+                                              'audio',
+                                          getTitle: (item) => item,
+                                          key: 'videoSync',
+                                        ),
+                                      ),
+                                      CustomSwitchTile(
+                                        padding: const EdgeInsets.all(10),
+                                        icon: Icons.movie_filter_rounded,
+                                        title: 'Frame Interpolation',
+                                        description:
+                                            'Smoother motion, can increase GPU usage',
+                                        switchValue: (mpvCore['interpolation']
+                                                as bool?) ??
+                                            false,
+                                        onChanged: (val) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting(
+                                                  'interpolation', val);
+                                          setState(() {});
+                                        },
+                                      ),
+                                      CustomSwitchTile(
+                                        padding: const EdgeInsets.all(10),
+                                        icon: Icons.graphic_eq_rounded,
+                                        title: 'Audio Pitch Correction',
+                                        description:
+                                            'Keep voice pitch stable at higher speeds',
+                                        switchValue:
+                                            (mpvCore['audioPitchCorrection']
+                                                    as bool?) ??
+                                                true,
+                                        onChanged: (val) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting(
+                                                  'audioPitchCorrection', val);
+                                          setState(() {});
+                                        },
+                                      ),
+                                      CustomSliderTile(
+                                        icon: Icons.timer_outlined,
+                                        title: 'Cache Minutes',
+                                        description:
+                                            'Read-ahead duration in Minutes',
+                                        sliderValue: ((mpvCore['cacheMinutes']
+                                                    as num?) ??
+                                                5)
+                                            .toDouble(),
+                                        min: 0,
+                                        max: 60,
+                                        divisions: 60,
+                                        label: ((mpvCore['cacheMinutes']
+                                                    as num?) ??
+                                                5)
+                                            .toInt()
+                                            .toString(),
+                                        onChanged: (value) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting('cacheMinutes',
+                                                  value.round());
+                                          setState(() {});
+                                        },
+                                      ),
+                                      CustomSliderTile(
+                                        icon: Icons.downloading_rounded,
+                                        title: 'Demuxer Readahead',
+                                        description: 'Readahead seconds',
+                                        sliderValue:
+                                            ((mpvCore['demuxerReadaheadSeconds']
+                                                        as num?) ??
+                                                    20)
+                                                .toDouble(),
+                                        min: 0,
+                                        max: 120,
+                                        divisions: 24,
+                                        label:
+                                            ((mpvCore['demuxerReadaheadSeconds']
+                                                        as num?) ??
+                                                    20)
+                                                .toInt()
+                                                .toString(),
+                                        onChanged: (value) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting(
+                                                  'demuxerReadaheadSeconds',
+                                                  value.round());
+                                          setState(() {});
+                                        },
+                                      ),
+                                      CustomSliderTile(
+                                        icon: Icons.storage_rounded,
+                                        title: 'Demuxer Max Buffer',
+                                        description:
+                                            'Maximum demuxer buffer (MB)',
+                                        sliderValue:
+                                            ((mpvCore['demuxerMaxBytesMb']
+                                                        as num?) ??
+                                                    64)
+                                                .toDouble(),
+                                        min: 16,
+                                        max: 512,
+                                        divisions: 62,
+                                        label: ((mpvCore['demuxerMaxBytesMb']
+                                                    as num?) ??
+                                                64)
+                                            .toInt()
+                                            .toString(),
+                                        onChanged: (value) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting(
+                                                  'demuxerMaxBytesMb',
+                                                  value.round());
+                                          setState(() {});
+                                        },
+                                      ),
+                                      CustomSliderTile(
+                                        icon: Icons.developer_board_rounded,
+                                        title: 'Decoder Threads',
+                                        description:
+                                            '0 means automatic thread count',
+                                        sliderValue: ((mpvCore['vdLavcThreads']
+                                                    as num?) ??
+                                                0)
+                                            .toDouble(),
+                                        min: 0,
+                                        max: 16,
+                                        divisions: 16,
+                                        label: ((mpvCore['vdLavcThreads']
+                                                    as num?) ??
+                                                0)
+                                            .toInt()
+                                            .toString(),
+                                        onChanged: (value) {
+                                          PlayerCoreVisualSettings
+                                              .setMpvCoreSetting(
+                                                  'vdLavcThreads',
+                                                  value.round());
+                                          setState(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            );
+                          })),
                       AnymexExpansionTile(
                           initialExpanded: true,
                           title: 'Common',
                           content: Column(
                             children: [
-                              if (Platform.isAndroid || Platform.isIOS)
-                                CustomSwitchTile(
-                                    icon: Icons.subtitles,
-                                    padding: const EdgeInsets.all(10),
-                                    title: "Use Old Player",
-                                    description:
-                                        "Pick wisely! (OLD -> FEATURES, NEW -> PERFORMANCE)",
-                                    switchValue: !PlayerKeys.useBetterPlayer
-                                        .get<bool>(true),
-                                    onChanged: (val) {
-                                      PlayerKeys.useBetterPlayer
-                                          .set<bool>(!val);
-                                      setState(() {});
-                                    }),
                               CustomSwitchTile(
                                   icon: Icons.subtitles,
                                   padding: const EdgeInsets.all(10),
                                   title: "Use Libass for Subtitles",
                                   description:
                                       "Better subtitle rendering using libass library",
-                                  switchValue:
-                                      PlayerKeys.useLibass.get<bool>(false),
-                                  onChanged: (val) {
+                                  switchValue: _useLibass,
+                                  onChanged: (val) async {
+                                    setState(() {
+                                      _useLibass = val;
+                                    });
                                     PlayerKeys.useLibass.set<bool>(val);
-                                    setState(() {});
+                                    if (Get.isRegistered<PlayerController>()) {
+                                      final controller =
+                                          Get.find<PlayerController>();
+                                      if (!controller.isClosed) {
+                                        await controller
+                                            .onLibassPreferenceChanged(val);
+                                      }
+                                    }
                                   }),
-                              // CustomTile(
-                              //   padding: 10,
-                              //   descColor:
-                              //       Theme.of(context).colorScheme.primary,
-                              //   isDescBold: true,
-                              //   icon: HugeIcons.strokeRoundedPlaySquare,
-                              //   onTap: () => showPlayerStyleDialog(),
-                              //   title: "Player Theme",
-                              //   description:
-                              //       numToPlayerStyle(settings.playerStyle),
-                              // ),
+                              CustomTile(
+                                padding: 10,
+                                descColor:
+                                    Theme.of(context).colorScheme.primary,
+                                isDescBold: true,
+                                icon: HugeIcons.strokeRoundedPlaySquare,
+                                onTap: _showPlayerControlThemeDialog,
+                                title: 'Player Theme',
+                                description: PlayerControlThemeRegistry.resolve(
+                                  settings.playerControlTheme,
+                                ).name,
+                              ),
+                              CustomTile(
+                                padding: 10,
+                                descColor:
+                                    Theme.of(context).colorScheme.primary,
+                                isDescBold: true,
+                                icon: Icons.data_object_rounded,
+                                onTap: () => showJsonPlayerThemesSheet(
+                                    context, setState, settings),
+                                title: 'JSON Theme Manager',
+                                description:
+                                    '${PlayerControlThemeRegistry.jsonThemes.length} imported theme(s)',
+                              ),
+                              CustomTile(
+                                padding: 10,
+                                descColor:
+                                    Theme.of(context).colorScheme.primary,
+                                isDescBold: true,
+                                icon: Icons.tune_rounded,
+                                onTap: _showMediaIndicatorThemeDialog,
+                                title: 'Swipe Indicator Theme',
+                                description:
+                                    MediaIndicatorThemeRegistry.resolve(
+                                  settings.mediaIndicatorTheme,
+                                ).name,
+                              ),
                               CustomSwitchTile(
                                   padding: const EdgeInsets.all(10),
                                   icon: Icons.stay_current_portrait,
@@ -443,7 +1013,6 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                 description:
                                     '${settings.speed.toStringAsFixed(1)}x',
                               ),
-                              // Resize Mode
                               CustomTile(
                                 padding: 10,
                                 icon: Icons.aspect_ratio,
@@ -475,6 +1044,14 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                       settings.autoSkipED = val),
                               CustomSwitchTile(
                                   padding: const EdgeInsets.all(10),
+                                  icon: Icons.fast_forward_outlined,
+                                  title: "Auto Skip Recap",
+                                  description: "Auto skip the recap section",
+                                  switchValue: settings.autoSkipRecap,
+                                  onChanged: (val) =>
+                                      settings.autoSkipRecap = val),
+                              CustomSwitchTile(
+                                  padding: const EdgeInsets.all(10),
                                   icon: Icons.all_inclusive,
                                   title: "Auto Skip Once Only",
                                   description: "Auto skip only once per watch",
@@ -499,6 +1076,24 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                   switchValue: settings.enableSwipeControls,
                                   onChanged: (val) =>
                                       settings.enableSwipeControls = val),
+                              CustomSwitchTile(
+                                  padding: const EdgeInsets.all(10),
+                                  icon: Icons.screenshot_rounded,
+                                  title: "Save Last Frame",
+                                  description:
+                                      "Saves a screenshot of the last frame you watched. Disabling this significantly reduces storage usage",
+                                  switchValue: settings.enableScreenshot,
+                                  onChanged: (val) =>
+                                      settings.enableScreenshot = val),
+                              CustomSwitchTile(
+                                  padding: const EdgeInsets.all(10),
+                                  icon: Icons.animation_rounded,
+                                  title: "Animate Control Overlay",
+                                  description:
+                                      "Disable to show and hide player controls instantly",
+                                  switchValue: settings.playerMenuAnimation,
+                                  onChanged: (val) =>
+                                      settings.playerMenuAnimation = val),
                               CustomSliderTile(
                                 sliderValue: settings.seekDuration.toDouble(),
                                 max: 50,
@@ -546,7 +1141,6 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                               ),
                             ],
                           )),
-                      // Subtitle Color
                       AnymexExpansionTile(
                           title: 'Subtitles',
                           content: Column(
@@ -570,14 +1164,14 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                 switchValue:
                                     settings.playerSettings.value.autoTranslate,
                                 onChanged: (val) {
-                                  final current = settings.playerSettings.value;
-                                  current.autoTranslate = val;
-                                  settings.playerSettings.value = current;
-                                  settings.playerSettings.refresh();
+                                  settings.playerSettings
+                                      .update((s) => s?.autoTranslate = val);
+                                  PlayerSettingsKeys.autoTranslate.set(val);
                                   setState(() {});
                                 },
                               ),
-                              if (!widget.isModal)
+                              if (!widget.isModal &&
+                                  settings.playerSettings.value.autoTranslate)
                                 CustomTile(
                                   padding: 10.0,
                                   icon: Icons.language,
@@ -590,7 +1184,56 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                     _showTranslationLanguageDialog();
                                   },
                                 ),
-
+                              CustomTile(
+                                padding: 10,
+                                icon: Icons.font_download_rounded,
+                                title: 'Subtitle Font',
+                                description:
+                                    settings.playerSettings.value.subtitleFont,
+                                onTap: _showFontSelectionDialog,
+                              ),
+                              CustomTile(
+                                padding: 10,
+                                icon: Icons.format_paint_rounded,
+                                title: 'Outline Type',
+                                description: normalizeSubtitleOutlineType(
+                                    settings.playerSettings.value
+                                        .subtitleOutlineType),
+                                onTap: _showOutlineTypeDialog,
+                              ),
+                              CustomSliderTile(
+                                sliderValue: settings
+                                    .playerSettings.value.subtitleOpacity,
+                                min: 0.1,
+                                max: 1.0,
+                                divisions: 10,
+                                onChanged: (val) {
+                                  final current = settings.playerSettings.value;
+                                  current.subtitleOpacity = val;
+                                  PlayerSettingsKeys.subtitleOpacity.set(val);
+                                  settings.playerSettings.refresh();
+                                },
+                                title: 'Subtitle Transparency',
+                                description: 'Adjust text visibility',
+                                icon: Icons.opacity,
+                              ),
+                              CustomSliderTile(
+                                sliderValue: settings
+                                    .playerSettings.value.subtitleBottomMargin,
+                                min: 0.0,
+                                max: 100.0,
+                                divisions: 20,
+                                onChanged: (val) {
+                                  final current = settings.playerSettings.value;
+                                  current.subtitleBottomMargin = val;
+                                  PlayerSettingsKeys.subtitleBottomMargin
+                                      .set(val);
+                                  settings.playerSettings.refresh();
+                                },
+                                title: 'Bottom Margin',
+                                description: 'Distance from bottom of screen',
+                                icon: Icons.vertical_align_bottom,
+                              ),
                               CustomTile(
                                 padding: 10,
                                 description: 'Change subtitle colors',
@@ -599,13 +1242,14 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                 onTap: () {
                                   _showColorSelectionDialog(
                                       'Select Subtitle Color',
-                                      fontColorOptions[settings.subtitleColor]!,
+                                      fontColorOptions[
+                                              settings.subtitleColor] ??
+                                          fontColorOptions['Default']!,
                                       (color) {
                                     settings.subtitleColor = color;
-                                  });
+                                  }, fontColorOptions);
                                 },
                               ),
-                              // Subtitle Outline Color
                               CustomTile(
                                 padding: 10,
                                 icon: Icons.palette,
@@ -614,13 +1258,13 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                 onTap: () {
                                   _showColorSelectionDialog(
                                       'Select Subtitle Outline Color',
-                                      colorOptions[settings
-                                          .subtitleOutlineColor]!, (color) {
+                                      colorOptions[
+                                              settings.subtitleOutlineColor] ??
+                                          colorOptions['None']!, (color) {
                                     settings.subtitleOutlineColor = color;
-                                  });
+                                  }, colorOptions);
                                 },
                               ),
-
                               CustomTile(
                                 padding: 10,
                                 description: 'Change subtitle background color',
@@ -630,17 +1274,16 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                   _showColorSelectionDialog(
                                       'Select Subtitle Background Color',
                                       colorOptions[settings
-                                          .subtitleBackgroundColor]!, (color) {
+                                              .subtitleBackgroundColor] ??
+                                          colorOptions['None']!, (color) {
                                     settings.subtitleBackgroundColor = color;
-                                  });
+                                  }, colorOptions);
                                 },
                               ),
-                              // Subtitle Preview
                               CustomSliderTile(
                                 sliderValue: settings.subtitleSize.toDouble(),
                                 min: 12.0,
                                 max: 90.0,
-                                divisions: 18,
                                 onChanged: (double value) {
                                   settings.subtitleSize = value.toInt();
                                 },
@@ -652,8 +1295,8 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                 sliderValue:
                                     settings.subtitleOutlineWidth.toDouble(),
                                 min: 1.0,
-                                max: 5.0,
-                                divisions: 5,
+                                max: 8.0,
+                                divisions: 14,
                                 onChanged: (double value) {
                                   settings.subtitleOutlineWidth = value.toInt();
                                 },
@@ -676,32 +1319,33 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                                     ),
                                     const SizedBox(height: 10),
                                     Container(
-                                        alignment: Alignment.center,
-                                        decoration: BoxDecoration(
-                                            color: colorOptions[settings
-                                                .subtitleBackgroundColor],
-                                            borderRadius:
-                                                BorderRadius.circular(12)),
-                                        padding: const EdgeInsets.all(10),
-                                        child: OutlinedText(
-                                          text: Text(
-                                            'Subtitle Preview Text',
-                                            style: TextStyle(
-                                              color: colorOptions[
-                                                  settings.subtitleColor],
-                                              fontSize: settings.subtitleSize
-                                                  .toDouble(),
-                                            ),
-                                          ),
-                                          strokes: [
-                                            OutlinedTextStroke(
-                                                color: fontColorOptions[settings
-                                                    .subtitleOutlineColor]!,
-                                                width: settings
-                                                    .subtitleOutlineWidth
-                                                    .toDouble())
-                                          ],
-                                        )),
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: colorOptions[
+                                            settings.subtitleBackgroundColor],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.all(10),
+                                      child: buildStyledSubtitleText(
+                                        text: 'Subtitle Preview Text',
+                                        textColor: fontColorOptions[
+                                                settings.subtitleColor] ??
+                                            fontColorOptions['Default']!,
+                                        fontSize:
+                                            settings.subtitleSize.toDouble(),
+                                        fontFamily: resolveSubtitleFontFamily(
+                                            settings.playerSettings.value
+                                                .subtitleFont),
+                                        outlineType: settings.playerSettings
+                                            .value.subtitleOutlineType,
+                                        outlineWidth: settings
+                                            .subtitleOutlineWidth
+                                            .toDouble(),
+                                        outlineColor: colorOptions[settings
+                                                .subtitleOutlineColor] ??
+                                            colorOptions['Black']!,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -712,6 +1356,7 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
                         content: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            _buildJsonThemeInfoCard(),
                             _buildSectionLabel('Left Side'),
                             ReorderableListView.builder(
                               key: const Key('left_list'),
@@ -805,6 +1450,73 @@ class _SettingsPlayerState extends State<SettingsPlayer> {
               .textTheme
               .titleMedium
               ?.copyWith(fontFamily: 'Poppins-SemiBold')),
+    );
+  }
+
+  Widget _buildExperimentalGateMessage(String text) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.colors.primaryContainer.opaque(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: context.colors.primary.opaque(0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded,
+              size: 18, color: context.colors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: context.colors.onSurface,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJsonThemeInfoCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.opaque(0.18, iReallyMeanIt: true),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.primary.opaque(0.4, iReallyMeanIt: true),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'If you are using a JSON theme, changes here will not affect player controls. Switch to a built-in theme to apply these settings.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    height: 1.35,
+                  ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

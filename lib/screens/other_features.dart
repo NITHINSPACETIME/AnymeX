@@ -1,10 +1,11 @@
 import 'package:anymex/screens/anime/misc/barcode_scanner_page.dart';
 import 'package:anymex/screens/anime/misc/calendar.dart';
-import 'package:anymex/screens/anime/misc/list_exporter.dart'; 
+import 'package:anymex/screens/anime/misc/list_exporter.dart';
 import 'package:anymex/screens/anime/misc/recommendation.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/glow.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:flutter/material.dart';
 
 class OtherFeaturesPage extends StatelessWidget {
@@ -81,10 +82,9 @@ class OtherFeaturesPage extends StatelessWidget {
                   color: colorScheme.secondaryContainer,
                   onColor: colorScheme.onSecondaryContainer,
                   isFullWidth: true,
-                  onTap: () => navigate(() => const ListExporterPage(isManga: false)),
+                  onTap: () =>
+                      navigate(() => const ListExporterPage(isManga: false)),
                 ),
-
-
                 const SizedBox(height: 32),
                 Row(
                   children: [
@@ -115,7 +115,7 @@ class OtherFeaturesPage extends StatelessWidget {
                           title: 'AI Picks',
                           description: 'Smart manga suggestions',
                           color: colorScheme.tertiaryContainer,
-                          onColor: colorScheme.onTertiaryContainer,
+                          onColor: colorScheme.tertiary,
                           onTap: () => navigate(() => const AIRecommendation(
                                 isManga: true,
                               )),
@@ -128,7 +128,7 @@ class OtherFeaturesPage extends StatelessWidget {
                           title: 'Scanner',
                           description: 'Scan ISBN barcodes',
                           color: colorScheme.tertiaryContainer,
-                          onColor: colorScheme.onTertiaryContainer,
+                          onColor: colorScheme.tertiary,
                           onTap: () =>
                               navigate(() => const BarcodeScannerPage()),
                         ),
@@ -142,9 +142,10 @@ class OtherFeaturesPage extends StatelessWidget {
                   title: 'List Exporter',
                   description: 'Export your Manga list',
                   color: colorScheme.tertiaryContainer,
-                  onColor: colorScheme.onTertiaryContainer,
+                  onColor: colorScheme.tertiary,
                   isFullWidth: true,
-                  onTap: () => navigate(() => const ListExporterPage(isManga: true)),
+                  onTap: () =>
+                      navigate(() => const ListExporterPage(isManga: true)),
                 ),
                 const SizedBox(height: 100),
               ],
@@ -158,7 +159,8 @@ class OtherFeaturesPage extends StatelessWidget {
 
 class NestedHeader extends StatelessWidget {
   final String title;
-  const NestedHeader({super.key, required this.title});
+  final Widget? action;
+  const NestedHeader({super.key, required this.title, this.action});
 
   @override
   Widget build(BuildContext context) {
@@ -190,15 +192,17 @@ class NestedHeader extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                color: theme.colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-                fontSize: 22,
-              ),
+            child: AnymexText(
+              text: title,
+              variant: TextVariant.semiBold,
+              size: 22,
+              isMarquee: true,
             ),
           ),
+          if (action != null) ...[
+            const SizedBox(width: 12),
+            action!,
+          ],
         ],
       ),
     );

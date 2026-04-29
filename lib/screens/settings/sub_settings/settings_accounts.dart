@@ -1,21 +1,43 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:anymex/controllers/discord/discord_login.dart';
 import 'package:anymex/controllers/discord/discord_rpc.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
+import 'package:anymex/controllers/services/storage/anymex_cache_manager.dart';
+import 'package:anymex/controllers/sync/gist_sync_controller.dart';
+import 'package:anymex/controllers/sync/progress_sync_section.dart';
 import 'package:anymex/models/Service/online_service.dart';
 import 'package:anymex/screens/other_features.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/glow.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/scroll_wrapper.dart';
+import 'package:anymex/widgets/common/custom_tiles.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:iconly/iconly.dart';
 
-class SettingsAccounts extends StatelessWidget {
+class SettingsAccounts extends StatefulWidget {
   const SettingsAccounts({super.key});
+
+  @override
+  State<SettingsAccounts> createState() => _SettingsAccountsState();
+}
+
+class _SettingsAccountsState extends State<SettingsAccounts> {
+  late final GistSyncController _gistSyncCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _gistSyncCtrl = Get.find<GistSyncController>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_gistSyncCtrl.isLoggedIn.value) return;
+      unawaited(_gistSyncCtrl.refreshCloudGistStatus());
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,19 +45,19 @@ class SettingsAccounts extends StatelessWidget {
     final services = [
       {
         'service': serviceHandler.anilistService,
-        'icon': 'assets/icons/anilist-icon.png',
+        'icon': 'assets/images/anilist-icon.png',
         'title': "Anilist",
         'color': const Color(0xFF02A9FF),
       },
       {
         'service': serviceHandler.malService,
-        'icon': 'assets/icons/mal-icon.png',
+        'icon': 'assets/images/mal-icon.png',
         'title': "MyAnimeList",
         'color': const Color(0xFF2E51A2),
       },
       {
         'service': serviceHandler.simklService,
-        'icon': 'assets/icons/simkl-icon.png',
+        'icon': 'assets/images/simkl-icon.png',
         'title': "Simkl",
         'color': const Color(0xFF000000),
       },
@@ -75,6 +97,8 @@ class SettingsAccounts extends StatelessWidget {
                           brandColor: s['color'] as Color?,
                         ),
                       )),
+                  const SizedBox(height: 24),
+                  const ProgressSyncSection(),
                 ],
               ),
             ),
@@ -216,7 +240,10 @@ class DiscordTile extends StatelessWidget {
         child: CircleAvatar(
           radius: 28,
           backgroundColor: colors.surfaceContainerHighest,
-          backgroundImage: CachedNetworkImageProvider(url),
+          backgroundImage: CachedNetworkImageProvider(
+            url,
+            cacheManager: AnymeXCacheManager.instance,
+          ),
         ),
       );
     }
@@ -278,89 +305,94 @@ class TrackingServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Obx(() {
-      final bool isLogged = service.isLoggedIn.value;
+    return HighlightDecorator(
+      title: title,
+      child: Obx(() {
+        final bool isLogged = service.isLoggedIn.value;
 
-      final String username =
-          isLogged ? (service.profileData.value.name ?? "User") : "";
-      final String? avatar = isLogged ? service.profileData.value.avatar : null;
+        final String username =
+            isLogged ? (service.profileData.value.name ?? "User") : "";
+        final String? avatar =
+            isLogged ? service.profileData.value.avatar : null;
 
-      return Container(
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerLow.withOpacity(0.4),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isLogged
-                ? (brandColor ?? colors.primary).withOpacity(0.5)
-                : Colors.transparent,
-            width: 1,
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isLogged
+                  ? (brandColor ?? colors.primary).withOpacity(0.5)
+                  : Colors.transparent,
+              width: 1,
+            ),
           ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              if (isLogged) {
-                _showServiceOptions(context);
-              } else {
-                service.login(context);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Row(
-                children: [
-                  _buildServiceIcon(avatar, isLogged),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        AnymexText(
-                          text: title,
-                          variant: TextVariant.semiBold,
-                          size: 16,
-                        ),
-                        const SizedBox(height: 2),
-                        AnymexText(
-                          text: isLogged
-                              ? 'Connected as $username'
-                              : 'Not connected',
-                          size: 12,
-                          color: isLogged
-                              ? colors.primary
-                              : colors.onSurfaceVariant,
-                          maxLines: 1,
-                        ),
-                      ],
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (isLogged) {
+                  _showServiceOptions(context);
+                } else {
+                  service.login(context);
+                }
+              },
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                child: Row(
+                  children: [
+                    _buildServiceIcon(avatar, isLogged),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AnymexText(
+                            text: title,
+                            variant: TextVariant.semiBold,
+                            size: 16,
+                          ),
+                          const SizedBox(height: 2),
+                          AnymexText(
+                            text: isLogged
+                                ? 'Connected as $username'
+                                : 'Not connected',
+                            size: 12,
+                            color: isLogged
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                            maxLines: 1,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isLogged
-                          ? colors.surfaceContainerHigh
-                          : (brandColor ?? colors.primary).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: AnymexText(
-                      text: isLogged ? "Manage" : "Connect",
-                      variant: TextVariant.bold,
-                      size: 12,
-                      color: isLogged
-                          ? colors.onSurface
-                          : (brandColor ?? colors.primary),
-                    ),
-                  )
-                ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isLogged
+                            ? colors.surfaceContainerHigh
+                            : (brandColor ?? colors.primary).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: AnymexText(
+                        text: isLogged ? "Manage" : "Connect",
+                        variant: TextVariant.bold,
+                        size: 12,
+                        color: isLogged
+                            ? colors.onSurface
+                            : (brandColor ?? colors.primary),
+                      ),
+                    )
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      }),
+    );
   }
 
   Widget _buildServiceIcon(String? avatarUrl, bool isLogged) {
@@ -371,7 +403,10 @@ class TrackingServiceCard extends StatelessWidget {
         decoration: BoxDecoration(
             shape: BoxShape.circle,
             image: DecorationImage(
-                image: CachedNetworkImageProvider(avatarUrl),
+                image: CachedNetworkImageProvider(
+                  avatarUrl,
+                  cacheManager: AnymeXCacheManager.instance,
+                ),
                 fit: BoxFit.cover)),
       );
     }

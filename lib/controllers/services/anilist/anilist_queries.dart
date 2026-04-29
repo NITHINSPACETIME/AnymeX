@@ -1,4 +1,4 @@
-const detailsQuery = '''
+const detailsPrimaryQuery = '''
     query (\$id: Int) {
       Media(id: \$id) {
         id
@@ -9,6 +9,7 @@ const detailsQuery = '''
           english
           native
         }
+        synonyms
         description
         coverImage {
           color
@@ -39,12 +40,14 @@ const detailsQuery = '''
         genres
         studios {
           nodes {
+            id
             name
           }
         }
-        characters {
+        characters(sort: [ROLE, FAVOURITES_DESC], perPage: 25, page: 1) {
           edges {
             node {
+              id
               name {
                 full
               }
@@ -54,6 +57,8 @@ const detailsQuery = '''
               }
             }
             voiceActors(language: JAPANESE) {
+              id
+              languageV2
               name {
                 full
               }
@@ -79,7 +84,6 @@ const detailsQuery = '''
               type
               status
               averageScore
-
             }
           }
         }
@@ -96,7 +100,7 @@ const detailsQuery = '''
                   large
                 }
                 type
-averageScore
+                averageScore
               }
             }
           }
@@ -114,3 +118,201 @@ averageScore
       }
     }
   ''';
+
+const detailsSecondaryQuery = '''
+    query (\$id: Int) {
+      Media(id: \$id) {
+        id
+        favourites
+        staffPreview: staff(perPage: 25, sort: [RELEVANCE, ID]) {
+          edges {
+            role
+            node {
+              id
+              name {
+                full
+                userPreferred
+              }
+              image {
+                large
+              }
+            }
+          }
+        }
+        externalLinks {
+          url
+          site
+        }
+      }
+      Page(page: 1) {
+        mediaList(isFollowing: true, sort: [STATUS], mediaId: \$id) {
+          id
+          status
+          score(format: POINT_100)
+          progress
+          user {
+            id
+            name
+            avatar {
+              large
+            }
+          }
+        }
+      }
+    }
+  ''';
+
+const characterDetailsQuery = '''
+  query(\$id: Int) {
+    Character(id: \$id) {
+      id
+      name {
+        full
+        native
+        userPreferred
+      }
+      image {
+        large
+      }
+      description
+      gender
+      age
+      bloodType
+      dateOfBirth {
+        year
+        month
+        day
+      }
+      favourites
+      isFavourite
+      media(sort: POPULARITY_DESC, perPage: 25) {
+        edges {
+          node {
+            id
+            title {
+              userPreferred
+              english
+              romaji
+              native
+            }
+            coverImage {
+              large
+            }
+            type
+            format
+            averageScore
+            seasonYear
+            startDate {
+              year
+            }
+            mediaListEntry {
+              status
+            }
+          }
+          characterRole
+          voiceActors(sort: [RELEVANCE, ID]) {
+            id
+            name {
+              full
+              userPreferred
+            }
+            image {
+              large
+            }
+            languageV2
+          }
+        }
+      }
+    }
+  }
+''';
+
+const staffDetailsQuery = '''
+  query(\$id: Int, \$characterPage: Int = 1, \$staffPage: Int = 1) {
+    Staff(id: \$id) {
+      id
+      name {
+        full
+        native
+        userPreferred
+      }
+      image {
+        large
+      }
+      description
+      gender
+      age
+      dateOfBirth {
+        year
+        month
+        day
+      }
+      yearsActive
+      homeTown
+      favourites
+      isFavourite
+      bloodType
+      characters(sort: FAVOURITES_DESC, perPage: 50, page: \$characterPage) {
+        pageInfo {
+          hasNextPage
+          lastPage
+        }
+        edges {
+          node {
+            id
+            name {
+              full
+              userPreferred
+            }
+            image {
+              large
+            }
+            media(sort: POPULARITY_DESC, perPage: 1) {
+               nodes {
+                 id
+                 title {
+                   userPreferred
+                   english
+                   romaji
+                   native
+                 }
+               }
+            }
+          }
+          role
+        }
+      }
+      staffMedia(sort: POPULARITY_DESC, perPage: 50, page: \$staffPage) {
+        pageInfo {
+          hasNextPage
+          lastPage
+        }
+        edges {
+          node {
+            id
+            title {
+              userPreferred
+              english
+              romaji
+              native
+            }
+            coverImage {
+              large
+            }
+            type
+            format
+            averageScore
+            seasonYear
+            startDate {
+              year
+            }
+            mediaListEntry {
+              status
+            }
+          }
+          staffRole
+        }
+      }
+    }
+  }
+''';

@@ -4,17 +4,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:anymex/controllers/settings/settings.dart';
-import 'package:anymex/models/Offline/Hive/video.dart' as h;
+import 'package:anymex/database/isar_models/video.dart' as h;
 import 'package:anymex/screens/local_source/controller/local_source_controller.dart';
 import 'package:anymex/screens/local_source/model/detail_result.dart';
 import 'package:anymex/screens/local_source/player/offline_player.dart';
-import 'package:anymex/screens/local_source/player/offline_player_old.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/glow.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -529,13 +529,13 @@ class _WatchOfflineState extends State<WatchOffline> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
+                    AnymexText(
+                      text: title,
                       maxLines: 2,
+                      size: 16,
+                      variant: TextVariant.semiBold,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      isMarquee: true,
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -613,13 +613,13 @@ class _WatchOfflineState extends State<WatchOffline> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
+                    AnymexText(
+                      text: title,
                       maxLines: 2,
+                      size: 16,
+                      variant: TextVariant.semiBold,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      isMarquee: true,
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -682,13 +682,13 @@ class _WatchOfflineState extends State<WatchOffline> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
+                    AnymexText(
+                      text: title,
                       maxLines: 2,
+                      size: 16,
+                      variant: TextVariant.semiBold,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      isMarquee: true,
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -785,32 +785,12 @@ class _WatchOfflineState extends State<WatchOffline> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Image.network(
-        posterUrl,
+      child: AnymeXImage(
+        imageUrl: posterUrl,
         width: double.infinity,
         height: double.infinity,
         fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: ExpressiveLoadingIndicator(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return Center(
-            child: Icon(
-              Iconsax.video_play,
-              color: theme.colorScheme.primary,
-              size: 32,
-            ),
-          );
-        },
+        radius: 0,
       ),
     );
   }
@@ -1168,23 +1148,12 @@ class _WatchOfflineState extends State<WatchOffline> {
         if (isDirectory) {
           controller.navigateToFolder(item.path);
         } else {
-          if (settingsController.preferences
-              .get('useOldPlayer', defaultValue: false)) {
-            navigate(() => OfflineWatchPageOld(
-                  episodePath: LocalEpisode(
-                      path: item.path,
-                      name: itemName,
-                      folderName: path.basename(controller.currentPath.value)),
-                  episodesList: const [],
-                ));
-          } else {
-            navigate(() => OfflineWatchPage(
-                episodeList: const [],
-                episode: LocalEpisode(
-                    path: item.path,
-                    name: itemName,
-                    folderName: path.basename(controller.currentPath.value))));
-          }
+          navigate(() => OfflineWatchPage(
+              episodeList: const [],
+              episode: LocalEpisode(
+                  path: item.path,
+                  name: itemName,
+                  folderName: path.basename(controller.currentPath.value))));
         }
       },
       child: Container(

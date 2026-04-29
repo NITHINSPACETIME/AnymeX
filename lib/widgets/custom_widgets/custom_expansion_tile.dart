@@ -3,23 +3,26 @@ import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:anymex/widgets/common/custom_tiles.dart';
 
 class AnymexExpansionTile extends StatelessWidget {
   final String title;
   final Widget content;
   final bool initialExpanded;
 
-  AnymexExpansionTile({
+  const AnymexExpansionTile({
     super.key,
     required this.title,
     required this.content,
     this.initialExpanded = false,
   });
 
-  final RxBool _isExpanded = false.obs;
-
   @override
   Widget build(BuildContext context) {
+    final highlightProvider = SettingsHighlightProvider.of(context);
+    final shouldExpand =
+        initialExpanded || (highlightProvider?.expansionTitle == title);
+
     return AnymexCard(
       child: ExpansionTile(
         shape: ShapeBorder.lerp(
@@ -33,10 +36,11 @@ class AnymexExpansionTile extends StatelessWidget {
           variant: TextVariant.semiBold,
           color: context.colors.primary,
         ),
-        initiallyExpanded: initialExpanded,
-        onExpansionChanged: (expanded) => _isExpanded.value = expanded,
+        initiallyExpanded: shouldExpand,
         childrenPadding: const EdgeInsets.all(8),
-        children: [content],
+        children: [
+          ExpansionSectionScope(sectionTitle: title, child: content),
+        ],
       ),
     );
   }
@@ -48,18 +52,23 @@ class AnymexCard extends StatelessWidget {
   final bool enableAnimation;
   final Color? color;
   final ShapeBorder? shape;
-  const AnymexCard(
-      {super.key,
-      required this.child,
-      this.padding,
-      this.enableAnimation = false,
-      this.color,
-      this.shape});
+  final Clip? clipBehavior;
+
+  const AnymexCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.enableAnimation = false,
+    this.color,
+    this.shape,
+    this.clipBehavior,
+  });
 
   @override
   Widget build(BuildContext context) {
     final settings = Get.find<Settings>();
     return Card(
+      clipBehavior: clipBehavior,
       color: color ??
           (settings.disableGradient
               ? context.colors.surfaceContainerLow

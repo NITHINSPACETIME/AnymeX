@@ -1,14 +1,14 @@
 import 'package:anymex/controllers/settings/methods.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
 import 'package:anymex/screens/anime/details_page.dart';
 import 'package:anymex/utils/function.dart';
-import 'package:anymex/widgets/custom_widgets/custom_text.dart';
-import 'package:anymex/widgets/header.dart';
-import 'package:anymex/widgets/helper/tv_wrapper.dart';
-import 'package:flutter/material.dart';
 import 'package:anymex/utils/theme_extensions.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
+import 'package:anymex/widgets/helper/tv_wrapper.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
 
@@ -112,13 +112,12 @@ class AnimeCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               width: double.infinity,
-              child: Text(
-                data.name ?? '??',
-                style: const TextStyle(
-                  fontSize: 13,
-                ),
+              child: AnymexText(
+                text: data.name ?? '??',
+                size: 13,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                isMarquee: true,
               ),
             ),
           ],

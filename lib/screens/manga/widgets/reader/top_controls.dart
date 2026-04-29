@@ -1,10 +1,11 @@
 import 'dart:io';
 
-import 'package:anymex/models/Offline/Hive/chapter.dart';
+import 'package:anymex/database/isar_models/chapter.dart';
 import 'package:anymex/screens/manga/controller/reader_controller.dart';
-import 'package:anymex/screens/manga/widgets/reader/settings_view.dart';
+import 'package:anymex/screens/manga/widgets/reader/tabbed_reader_settings.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_progress.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -19,8 +20,7 @@ class ReaderTopControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final isDesktop =
-          Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+      final isDesktop = Platform.isWindows;
       final mediaQuery = MediaQuery.of(context);
       final statusBarHeight = mediaQuery.padding.top;
       const topControlsHeight = 50.0;
@@ -81,7 +81,7 @@ class ReaderTopControls extends StatelessWidget {
       height: 50,
       decoration: BoxDecoration(
         color: context.colors.surfaceContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(50),
         border: Border.all(color: context.colors.onSurface.opaque(0.2)),
       ),
       child: IconButton(
@@ -133,26 +133,23 @@ class ReaderTopControls extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            controller.currentChapter.value?.title ??
+                          child: AnymexText(
+                            text: controller.currentChapter.value?.title ??
                                 'Unknown Chapter',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            size: 12,
+                            variant: TextVariant.semiBold,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            isMarquee: true,
                           ),
                         ),
-                        const Icon(Icons.arrow_drop_down,
-                            color: Colors.white70, size: 16),
+                        const Icon(Icons.arrow_drop_down, size: 16),
                       ],
                     ),
                     Text(
                       'Chapter ${_formatNumber(controller.currentChapter.value?.number)} of ${controller.chapterList.length}',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: context.colors.onSurface.withOpacity(0.7),
                         fontSize: 10,
                       ),
                     ),
@@ -193,11 +190,12 @@ class ReaderTopControls extends StatelessWidget {
       height: 50,
       decoration: BoxDecoration(
         color: context.colors.surfaceContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(50),
         border: Border.all(color: context.colors.onSurface.opaque(0.2)),
       ),
       child: IconButton(
-        onPressed: () => _showSettings(context),
+        onPressed: () =>
+            TabbedReaderSettings(controller: controller).showSettings(context),
         icon: Icon(Icons.settings_rounded,
             color: context.colors.onSurface, size: 18),
       ),
@@ -233,10 +231,6 @@ class ReaderTopControls extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _showSettings(BuildContext context) {
-    ReaderSettings(controller: controller).showSettings(context);
   }
 }
 
@@ -294,15 +288,15 @@ class _ChapterListSheetState extends State<ChapterListSheet> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: CustomScrollView(
-            controller: widget.scrollController,
-            slivers: [
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: CustomScrollView(
+          controller: widget.scrollController,
+          slivers: [
             SliverToBoxAdapter(
               child: Column(
                 children: [
@@ -483,15 +477,14 @@ class _ChapterListSheetState extends State<ChapterListSheet> {
                       if (chapter.title != null && chapter.title!.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          child: Text(
-                            chapter.title!,
+                          child: AnymexText(
+                            text: chapter.title!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isCurrent ? Colors.white70 : Colors.grey,
-                            ),
+                            size: 10,
+                            color: isCurrent ? Colors.white70 : Colors.grey,
                             textAlign: TextAlign.center,
+                            isMarquee: true,
                           ),
                         ),
                     ],
@@ -536,12 +529,11 @@ class _ChapterListSheetState extends State<ChapterListSheet> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
         dense: true,
-        title: Text(
-          displayTitle,
-          style: TextStyle(
-            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-            color: isCurrent ? Theme.of(context).colorScheme.primary : null,
-          ),
+        title: AnymexText(
+          text: displayTitle,
+          variant: isCurrent ? TextVariant.bold : TextVariant.regular,
+          color: isCurrent ? Theme.of(context).colorScheme.primary : null,
+          isMarquee: true,
         ),
         trailing: isCurrent
             ? Icon(Icons.check_circle_rounded,

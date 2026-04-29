@@ -1,13 +1,13 @@
 import 'package:anymex/controllers/settings/methods.dart';
 import 'package:anymex/utils/extension_utils.dart';
 import 'package:anymex/utils/function.dart';
-import 'package:anymex/widgets/common/cards/base_card.dart';
-import 'package:anymex/widgets/custom_widgets/custom_text.dart';
-import 'package:anymex/widgets/header.dart';
-import 'package:blur/blur.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
-import 'package:flutter/material.dart';
 import 'package:anymex/utils/theme_extensions.dart';
+import 'package:anymex/widgets/common/cards/base_card.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
+import 'package:blur/blur.dart';
+import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 
 class SaikouCard extends CarouselCard {
@@ -155,6 +155,7 @@ class ModernCard extends CarouselCard {
                     variant: TextVariant.semiBold,
                     overflow: TextOverflow.ellipsis,
                     color: Colors.white,
+                    isMarquee: false,
                   ),
                 ),
               ),
@@ -237,6 +238,7 @@ class ExoticCard extends CarouselCard {
                 size: isDesktop(context) ? 14 : 12,
                 variant: TextVariant.semiBold,
                 overflow: TextOverflow.ellipsis,
+                isMarquee: false,
               ),
             ),
             10.height(),
@@ -372,6 +374,7 @@ class MinimalExoticCard extends CarouselCard {
                             variant: TextVariant.semiBold,
                             overflow: TextOverflow.ellipsis,
                             color: Colors.white,
+                            isMarquee: false,
                           ),
                         ),
                       ),
@@ -493,6 +496,7 @@ class BlurCard extends CarouselCard {
                     variant: TextVariant.semiBold,
                     overflow: TextOverflow.ellipsis,
                     color: Colors.white,
+                    isMarquee: false,
                   ),
                 ),
               ),

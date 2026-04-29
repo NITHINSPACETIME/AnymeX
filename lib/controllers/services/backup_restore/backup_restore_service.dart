@@ -3,19 +3,24 @@ import 'dart:io';
 
 import 'package:anymex/controllers/offline/offline_storage_controller.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
-import 'package:anymex/models/Offline/Hive/custom_list.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
+import 'package:anymex/database/isar_models/custom_list.dart';
+import 'package:anymex/database/isar_models/key_value.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/screens/library/controller/library_controller.dart';
 import 'package:anymex/utils/logger.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import 'package:isar_community/isar.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../../../main.dart';
 
 class BackupRestoreService extends GetxController {
   final OfflineStorageController _storageController = Get.find();
@@ -33,18 +38,32 @@ class BackupRestoreService extends GetxController {
     return digest.toString().substring(0, 32);
   }
 
-  Map<String, dynamic> _buildBackupData() {
-    final animeCount = _storageController.animeCustomLists.value.fold<int>(
+  Future<Map<String, dynamic>> _buildBackupData({
+    bool backupSettings = true,
+    bool backupAuthTokens = false,
+  }) async {
+    final animeCustomLists =
+        await _storageController.getCustomListsByType(ItemType.anime);
+    final mangaCustomLists =
+        await _storageController.getCustomListsByType(ItemType.manga);
+    final novelCustomLists =
+        await _storageController.getCustomListsByType(ItemType.novel);
+
+    final animeLibrary = await _storageController.getAnimeLibrary();
+    final mangaLibrary = await _storageController.getMangaLibrary();
+    final novelLibrary = await _storageController.getNovelLibrary();
+
+    final animeCount = animeCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
 
-    final mangaCount = _storageController.mangaCustomLists.value.fold<int>(
+    final mangaCount = mangaCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
 
-    final novelCount = _storageController.novelCustomLists.value.fold<int>(
+    final novelCount = novelCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
@@ -58,96 +77,123 @@ class BackupRestoreService extends GetxController {
       'animeCount': animeCount,
       'mangaCount': mangaCount,
       'novelCount': novelCount,
-      'animeLibrary':
-          _storageController.animeLibrary.map((e) => e.toJson()).toList(),
-      'mangaLibrary':
-          _storageController.mangaLibrary.map((e) => e.toJson()).toList(),
-      'novelLibrary':
-          _storageController.novelLibrary.map((e) => e.toJson()).toList(),
-      'animeCustomLists': _storageController.animeCustomLists.value
-          .map((e) => e.toJson())
-          .toList(),
-      'mangaCustomLists': _storageController.mangaCustomLists.value
-          .map((e) => e.toJson())
-          .toList(),
-      'novelCustomLists': _storageController.novelCustomLists.value
-          .map((e) => e.toJson())
+      'animeLibrary': animeLibrary.map((e) => e.toJson()).toList(),
+      'mangaLibrary': mangaLibrary.map((e) => e.toJson()).toList(),
+      'novelLibrary': novelLibrary.map((e) => e.toJson()).toList(),
+      'animeCustomLists': animeCustomLists.map((e) => e.toJson()).toList(),
+      'mangaCustomLists': mangaCustomLists.map((e) => e.toJson()).toList(),
+      'novelCustomLists': novelCustomLists.map((e) => e.toJson()).toList(),
+      'settings': isar.collection<KeyValue>()
+          .where()
+          .findAllSync()
+          .where((e) {
+            final isAuth = e.key?.startsWith('AuthKeys_') ?? false;
+            if (isAuth) return backupAuthTokens;
+            return backupSettings;
+          })
+          .map((e) => {'key': e.key, 'value': e.value})
           .toList(),
     };
   }
 
-  void _applyBackupData(Map<String, dynamic> data, {bool merge = false}) {
+  Future<void> _applyBackupData(Map<String, dynamic> data,
+      {bool merge = false,
+      bool restoreSettings = true,
+      bool restoreAuthTokens = false}) async {
     if (!merge) {
-      _storageController.clearCache();
+      await _storageController.clearCache();
     }
 
     final animeList = (data['animeLibrary'] as List?)
-            ?.map((e) => OfflineMedia.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => OfflineMedia.fromJson(
+                (e as Map<String, dynamic>)..["mediaTypeIndex"] = 1))
             .toList() ??
         [];
-
-    if (merge) {
-      for (var anime in animeList) {
-        if (_storageController.getAnimeById(anime.id ?? '') == null) {
-          _storageController.animeLibrary.add(anime);
-        }
-      }
-    } else {
-      _storageController.animeLibrary.assignAll(animeList);
-    }
 
     final mangaList = (data['mangaLibrary'] as List?)
-            ?.map((e) => OfflineMedia.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => OfflineMedia.fromJson(
+                (e as Map<String, dynamic>)..["mediaTypeIndex"] = 0))
             .toList() ??
         [];
-
-    if (merge) {
-      for (var manga in mangaList) {
-        if (_storageController.getMangaById(manga.id ?? '') == null) {
-          _storageController.mangaLibrary.add(manga);
-        }
-      }
-    } else {
-      _storageController.mangaLibrary.assignAll(mangaList);
-    }
 
     final novelList = (data['novelLibrary'] as List?)
-            ?.map((e) => OfflineMedia.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => OfflineMedia.fromJson(
+                (e as Map<String, dynamic>)..["mediaTypeIndex"] = 2))
             .toList() ??
         [];
 
-    if (merge) {
-      for (var novel in novelList) {
-        if (_storageController.getNovelById(novel.id ?? '') == null) {
-          _storageController.novelLibrary.add(novel);
+    await isar.writeTxn(() async {
+      if (merge) {
+        for (var anime in animeList) {
+          if (_storageController.getMediaById(anime.mediaId ?? '') == null) {
+            await isar.offlineMedias.put(anime);
+          }
         }
+
+        for (var manga in mangaList) {
+          if (_storageController.getMediaById(manga.mediaId ?? '') == null) {
+            await isar.offlineMedias.put(manga);
+          }
+        }
+
+        for (var novel in novelList) {
+          if (_storageController.getMediaById(novel.mediaId ?? '') == null) {
+            await isar.offlineMedias.put(novel);
+          }
+        }
+      } else {
+        await isar.offlineMedias.putAll([
+          ...animeList,
+          ...mangaList,
+          ...novelList,
+        ]);
       }
-    } else {
-      _storageController.novelLibrary.assignAll(novelList);
-    }
+    });
 
     if (!merge) {
-      _storageController.animeCustomLists.value =
-          (data['animeCustomLists'] as List?)
-                  ?.map((e) => CustomList.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+      final animeCustomLists = (data['animeCustomLists'] as List?)
+              ?.map((e) => CustomList.fromJson(
+                  (e as Map<String, dynamic>)..['mediaTypeIndex'] = 1))
+              .toList() ??
+          [];
 
-      _storageController.mangaCustomLists.value =
-          (data['mangaCustomLists'] as List?)
-                  ?.map((e) => CustomList.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+      final mangaCustomLists = (data['mangaCustomLists'] as List?)
+              ?.map((e) => CustomList.fromJson(
+                  (e as Map<String, dynamic>)..['mediaTypeIndex'] = 0))
+              .toList() ??
+          [];
 
-      _storageController.novelCustomLists.value =
-          (data['novelCustomLists'] as List?)
-                  ?.map((e) => CustomList.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+      final novelCustomLists = (data['novelCustomLists'] as List?)
+              ?.map((e) => CustomList.fromJson(
+                  (e as Map<String, dynamic>)..['mediaTypeIndex'] = 2))
+              .toList() ??
+          [];
+
+      await isar.writeTxn(() async {
+        await isar.customLists.putAll([
+          ...animeCustomLists,
+          ...mangaCustomLists,
+          ...novelCustomLists,
+        ]);
+      });
     }
 
-    _storageController.saveEverything();
-    _storageController.rebuildDatabase();
+    final settingsList = data['settings'] as List? ?? [];
+    await isar.writeTxn(() async {
+      for (var setting in settingsList) {
+        final key = setting['key'] as String?;
+        if (key == null) continue;
+
+        final isAuth = key.startsWith('AuthKeys_');
+        if (isAuth && !restoreAuthTokens) continue;
+        if (!isAuth && !restoreSettings) continue;
+
+        final kv = KeyValue()
+          ..key = key
+          ..value = setting['value'];
+        await isar.collection<KeyValue>().put(kv);
+      }
+    });
 
     Get.delete<LibraryController>();
   }
@@ -202,27 +248,11 @@ class BackupRestoreService extends GetxController {
     return true;
   }
 
-  Future<File> _createBackupFile({String? password}) async {
-    final data = _buildBackupData();
-
-    final packageInfo = await PackageInfo.fromPlatform();
-    data['appVersion'] = packageInfo.version;
-
-    final content = password != null && password.isNotEmpty
-        ? _encryptData(data, password)
-        : jsonEncode(data);
-
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-      '${dir.path}/anymex_${DateTime.now().millisecondsSinceEpoch}.anymex',
-    );
-    await file.writeAsString(content, flush: true);
-    return file;
-  }
-
   Future<String?> exportBackupToExternal({
     String? password,
     bool requestPath = true,
+    bool backupSettings = true,
+    bool backupAuthTokens = false,
   }) async {
     try {
       if (Platform.isAndroid && requestPath) {
@@ -233,8 +263,10 @@ class BackupRestoreService extends GetxController {
         }
       }
 
-      // Build the backup data
-      final data = _buildBackupData();
+      final data = await _buildBackupData(
+        backupSettings: backupSettings,
+        backupAuthTokens: backupAuthTokens,
+      );
       final packageInfo = await PackageInfo.fromPlatform();
       data['appVersion'] = packageInfo.version;
 
@@ -297,7 +329,6 @@ class BackupRestoreService extends GetxController {
             throw Exception('Failed to save backup: $fallbackError');
           }
         } else {
-          // Android - save to downloads or documents
           final directory = Platform.isAndroid
               ? Directory('/storage/emulated/0/Download')
               : await getApplicationDocumentsDirectory();
@@ -317,7 +348,10 @@ class BackupRestoreService extends GetxController {
   }
 
   Future<void> restoreBackup(String filePath,
-      {String? password, bool merge = false}) async {
+      {String? password,
+      bool merge = false,
+      bool restoreSettings = true,
+      bool restoreAuthTokens = false}) async {
     try {
       final file = File(filePath);
 
@@ -331,7 +365,10 @@ class BackupRestoreService extends GetxController {
           ? _decryptData(content, password)
           : jsonDecode(content) as Map<String, dynamic>;
 
-      _applyBackupData(data, merge: merge);
+      await _applyBackupData(data,
+          merge: merge,
+          restoreSettings: restoreSettings,
+          restoreAuthTokens: restoreAuthTokens);
 
       Logger.i('Backup restored successfully from: $filePath');
     } catch (e) {
@@ -362,7 +399,7 @@ class BackupRestoreService extends GetxController {
         if (pickedFile.path != null) {
           final ext = pickedFile.path?.split('.').last.toLowerCase();
           if (ext != "anymex") {
-            snackBar('Wrong file retard');
+            snackBar('Invalid file format. Please select a .anymex file');
             return "";
           }
 
@@ -442,6 +479,12 @@ class BackupRestoreService extends GetxController {
             (data['mangaCustomLists'] as List?)?.length ?? 0,
         'novelCustomListsCount':
             (data['novelCustomLists'] as List?)?.length ?? 0,
+        'hasSettings': (data['settings'] as List?)?.any((e) =>
+                !(e['key'] as String? ?? '').startsWith('AuthKeys_')) ??
+            false,
+        'hasAuthTokens': (data['settings'] as List?)?.any((e) =>
+                (e['key'] as String? ?? '').startsWith('AuthKeys_')) ??
+            false,
       };
     } catch (e) {
       Logger.i('Failed to get backup info: $e');
@@ -465,32 +508,42 @@ class BackupRestoreService extends GetxController {
     }
   }
 
-  Map<String, dynamic> getLibraryStats() {
-    final animeCount = _storageController.animeCustomLists.value.fold<int>(
+  Future<Map<String, dynamic>> getLibraryStats() async {
+    final animeCustomLists =
+        await _storageController.getCustomListsByType(ItemType.anime);
+    final mangaCustomLists =
+        await _storageController.getCustomListsByType(ItemType.manga);
+    final novelCustomLists =
+        await _storageController.getCustomListsByType(ItemType.novel);
+
+    final animeCount = animeCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
 
-    final mangaCount = _storageController.mangaCustomLists.value.fold<int>(
+    final mangaCount = mangaCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
 
-    final novelCount = _storageController.novelCustomLists.value.fold<int>(
+    final novelCount = novelCustomLists.fold<int>(
       0,
       (sum, list) => sum + (list.mediaIds?.length ?? 0),
     );
+
+    final animeLibrary = await _storageController.getAnimeLibrary();
+    final mangaLibrary = await _storageController.getMangaLibrary();
+    final novelLibrary = await _storageController.getNovelLibrary();
 
     return {
       'animeCount': animeCount,
       'mangaCount': mangaCount,
       'novelCount': novelCount,
-      'totalMedia': _storageController.animeLibrary.length +
-          _storageController.mangaLibrary.length +
-          _storageController.novelLibrary.length,
-      'animeCustomLists': _storageController.animeCustomLists.value.length,
-      'mangaCustomLists': _storageController.mangaCustomLists.value.length,
-      'novelCustomLists': _storageController.novelCustomLists.value.length,
+      'totalMedia':
+          animeLibrary.length + mangaLibrary.length + novelLibrary.length,
+      'animeCustomLists': animeCustomLists.length,
+      'mangaCustomLists': mangaCustomLists.length,
+      'novelCustomLists': novelCustomLists.length,
     };
   }
 

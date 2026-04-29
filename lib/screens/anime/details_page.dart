@@ -8,13 +8,13 @@ import 'package:anymex/controllers/services/anilist/anilist_auth.dart';
 import 'package:anymex/controllers/services/anilist/anilist_data.dart';
 import 'package:anymex/controllers/services/jikan.dart';
 import 'package:anymex/controllers/settings/methods.dart';
-import 'package:anymex/controllers/settings/settings.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
 import 'package:anymex/controllers/source/source_mapper.dart';
-import 'package:anymex/database/model/comment.dart';
+import 'package:anymex/database/comments/model/comment.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/database/isar_models/episode.dart';
 import 'package:anymex/models/Anilist/anilist_media_user.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/models/Offline/Hive/episode.dart';
 import 'package:anymex/screens/anime/widgets/anime_stats.dart';
 import 'package:anymex/screens/anime/widgets/comments/comments_section.dart';
 import 'package:anymex/screens/anime/widgets/comments/controller/comment_preloader.dart';
@@ -24,6 +24,7 @@ import 'package:anymex/screens/anime/widgets/list_editor.dart';
 import 'package:anymex/screens/anime/widgets/voice_actor.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/logger.dart';
+import 'package:anymex/utils/media_share.dart';
 import 'package:anymex/utils/media_syncer.dart';
 import 'package:anymex/utils/string_extensions.dart';
 import 'package:anymex/utils/theme_extensions.dart';
@@ -37,19 +38,26 @@ import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/custom_widgets/custom_textspan.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
-import 'package:expandable_page_view/expandable_page_view.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:iconly/iconly.dart';
 import 'package:iconsax/iconsax.dart';
+import 'package:anymex/controllers/services/community_service.dart';
+import 'package:anymex/widgets/non_widgets/recommend_button.dart';
 
 class AnimeDetailsPage extends StatefulWidget {
   final Media media;
   final String tag;
-  const AnimeDetailsPage({super.key, required this.media, required this.tag});
+  final int initialTabIndex;
+  const AnimeDetailsPage(
+      {super.key,
+      required this.media,
+      required this.tag,
+      this.initialTabIndex = 0});
 
   @override
   State<AnimeDetailsPage> createState() => _AnimeDetailsPageState();
@@ -57,7 +65,7 @@ class AnimeDetailsPage extends StatefulWidget {
 
 class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
   Media? anilistData;
-  Rx<TrackedMedia?> currentAnime = TrackedMedia().obs;
+  Rxn<TrackedMedia> currentAnime = Rxn<TrackedMedia>();
   final anilist = Get.find<AnilistAuth>();
 
   RxBool isListedAnime = false.obs;
@@ -69,6 +77,7 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
   RxList<Episode> rawEpisodes = <Episode>[].obs;
   Rx<bool> isAnify = true.obs;
   Rx<bool> showAnify = true.obs;
+  RxBool disableAnifyForCurrentSource = false.obs;
 
   RxDouble animeScore = 0.0.obs;
   RxInt animeProgress = 0.obs;
@@ -80,16 +89,21 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
 
   RxBool episodeError = false.obs;
 
- // for fast parallel filler fetching 
   Map<String, bool> fillerEpisodes = {};
 
-  PageController controller = PageController();
+  late final PageController controller;
 
   final sourceController = Get.find<SourceController>();
 
   final RxInt timeLeft = 0.obs;
 
   String posterColor = '';
+  int _sourceRequestVersion = 0;
+  Worker? _activeSourceWorker;
+
+  int _beginSourceRequest() => ++_sourceRequestVersion;
+  bool _isStaleSourceRequest(int requestId) =>
+      requestId != _sourceRequestVersion;
 
   void _onPageSelected(int index) {
     selectedPage.value = index;
@@ -97,15 +111,55 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
         duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
   }
 
+  Future<void> _showShareOptions() async {
+    await MediaShare.showOptions(
+      context: context,
+      baseMedia: widget.media,
+      hydratedMedia: anilistData,
+      isManga: false,
+    );
+  }
+
+  Widget _buildActionIconButton({
+    required BuildContext context,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      height: 50,
+      width: 60,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.opaque(0.2),
+        ),
+        color: Theme.of(context).colorScheme.surfaceContainer.opaque(0.5),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Icon(icon),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    if (sourceController.installedExtensions.isEmpty) {
-      showAnify.value = false;
-    }
+    final initialPage = widget.initialTabIndex.clamp(0, 2).toInt();
+    selectedPage.value = initialPage;
+    controller = PageController(initialPage: initialPage);
+    _updateAnifyAvailabilityForSource();
+    _activeSourceWorker = ever<Source?>(sourceController.activeSource, (_) {
+      _updateAnifyAvailabilityForSource();
+    });
     Future.delayed(const Duration(milliseconds: 500), () {
       _checkAnimePresence();
     });
+
     _fetchAnilistData();
   }
 
@@ -122,10 +176,8 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     }
   }
 
- 
   Future<void> _fetchFillerInfo() async {
     final malId = anilistData?.idMal ?? widget.media.idMal;
-    if (malId == null) return;
 
     try {
       final data = await JikanService.getFillerEpisodes(malId.toString());
@@ -136,28 +188,50 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     } catch (_) {}
   }
 
-
   void _applyFillerInfo() {
-    if (fillerEpisodes.isEmpty || episodeList.isEmpty) return;
-    
+    if (fillerEpisodes.isEmpty ||
+        (episodeList.isEmpty && rawEpisodes.isEmpty)) {
+      return;
+    }
+
     bool updated = false;
-    for (var ep in episodeList) {
-      if (fillerEpisodes.containsKey(ep.number)) {
-        ep.filler = true;
-        updated = true;
+
+    void markFillers(List<Episode> episodes) {
+      for (final ep in episodes) {
+        if (fillerEpisodes.containsKey(ep.number) && ep.filler != true) {
+          ep.filler = true;
+          updated = true;
+        }
       }
     }
-    
+
+    markFillers(episodeList);
+    markFillers(rawEpisodes);
+
     if (updated && mounted) setState(() {});
   }
 
   @override
   void dispose() {
     controller.dispose();
+    _activeSourceWorker?.dispose();
 
     CommentPreloader.to.removePreloadedController(widget.media.id.toString());
     DiscordRPCController.instance.updateBrowsingPresence();
     super.dispose();
+  }
+
+  void _updateAnifyAvailabilityForSource() {
+    final shouldDisable =
+        sourceController.activeSource.value is CloudStreamSource;
+    disableAnifyForCurrentSource.value = shouldDisable;
+
+    if (widget.media.serviceType == ServicesType.extensions ||
+        sourceController.installedExtensions.isEmpty ||
+        shouldDisable) {
+      showAnify.value = false;
+      isAnify.value = false;
+    }
   }
 
   void _initListVars() {
@@ -172,9 +246,10 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     service.setCurrentMedia(widget.media.id.toString());
     var data = service.currentMedia;
 
-    if (data.value.id != null || data.value.id != '') {
+    if ((data.value.id ?? '').isNotEmpty) {
       isListedAnime.value = true;
-      currentAnime = data;
+      currentAnime.value = data.value;
+      currentAnime.refresh();
     } else {
       isListedAnime.value = false;
       currentAnime.value = null;
@@ -211,15 +286,13 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
       if (timeLeft.value != 0) {
         startCountdown(tempData.nextAiringEpisode!.airingAt);
       }
-      if (isExtensions) {
-        showAnify.value = false;
-      }
+      _updateAnifyAvailabilityForSource();
       Logger.i("Data Loaded for media => ${widget.media.title}");
 
       if (isExtensions) {
         _processExtensionData(tempData);
       } else {
-    
+        _fetchSecondaryData(tempData);
         Future.wait([_mapToService(), _syncMediaIds(), _fetchFillerInfo()]);
       }
     } catch (e) {
@@ -231,85 +304,176 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     } finally {}
   }
 
-  Future<void> _mapToService() async {
+  Future<void> _fetchSecondaryData(Media tempData) async {
+    try {
+      if (widget.media.serviceType.service is AnilistData) {
+        final anilistService = widget.media.serviceType.service as AnilistData;
+        await anilistService.fetchSecondaryDetails(
+            widget.media.id.toString(), tempData);
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      Logger.i("Secondary Data Fetch Failed => $e");
+    }
+  }
+
+  Future<void> _mapToService({int? requestId}) async {
+    final activeRequestId = requestId ?? _beginSourceRequest();
+    episodeList.clear();
+    rawEpisodes.clear();
+    episodeError.value = false;
     final key =
         '${sourceController.activeSource.value?.id}-${anilistData?.id}-${anilistData?.serviceType.index}';
-    final savedTitle =
-        settingsController.preferences.get(key, defaultValue: null);
-    final mappedData = await mapMedia(
-        formatTitles(widget.media) ?? [], searchedTitle,
-        savedTitle: savedTitle);
-    if (mappedData != null) {
-      await _fetchSourceDetails(mappedData);
+    final savedTitle = DynamicKeys.mappedMediaTitle.get<String?>(key, null);
+    final mappedData = await SourceMapper.mapMedia(
+        formatTitles(anilistData ?? widget.media) ?? [], searchedTitle,
+        mediaId: widget.media.id.toString(),
+        type: ItemType.anime,
+        savedTitle: savedTitle,
+        synonyms: anilistData?.synonyms ?? []);
+    if (_isStaleSourceRequest(activeRequestId) || !mounted) {
+      return;
+    }
+    if (mappedData != null && mappedData.id.toString().isNotEmpty) {
+      await _fetchSourceDetails(mappedData, requestId: activeRequestId);
     }
   }
 
   List<String>? formatTitles(Media media) {
-    return ['${media.title}*ANIME', media.romajiTitle];
+    String sanitize(String value) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty || trimmed == '?' || trimmed == '??') return '';
+      return trimmed;
+    }
+
+    final englishCandidates = [
+      sanitize(anilistData?.title ?? ''),
+      sanitize(media.title),
+      sanitize(widget.media.title),
+    ];
+    final romajiCandidates = [
+      sanitize(anilistData?.romajiTitle ?? ''),
+      sanitize(media.romajiTitle),
+      sanitize(widget.media.romajiTitle),
+    ];
+
+    final englishTitle =
+        englishCandidates.firstWhere((title) => title.isNotEmpty, orElse: () {
+      return romajiCandidates.firstWhere((title) => title.isNotEmpty,
+          orElse: () => 'Unknown Title');
+    });
+
+    final romajiTitle =
+        romajiCandidates.firstWhere((title) => title.isNotEmpty, orElse: () {
+      return englishTitle;
+    });
+
+    return ['$englishTitle*ANIME', romajiTitle];
   }
 
   void _processExtensionData(Media tempData) async {
     final episodes = tempData.mediaContent!.reversed.toList();
     final convertedEpisodes = _convertEpisodes(episodes, tempData.title);
-    rawEpisodes.value = _createRawEpisodes(convertedEpisodes);
-    episodeList.value = _renewEpisodeData(convertedEpisodes);
+    rawEpisodes.assignAll(_cloneEpisodes(convertedEpisodes));
+    episodeList.assignAll(_renewEpisodeData(_cloneEpisodes(convertedEpisodes)));
+    searchedTitle.value = "Found: ${tempData.title}";
     setState(() {});
   }
 
-  Future<void> _fetchSourceDetails(Media media) async {
+  Future<void> _fetchSourceDetails(Media media, {int? requestId}) async {
+    final activeRequestId = requestId ?? _beginSourceRequest();
     try {
       episodeError.value = false;
+      episodeList.clear();
+      rawEpisodes.clear();
       final episodeFuture = await sourceController.activeSource.value!.methods
           .getDetail(DMedia.withUrl(media.id));
+      if (_isStaleSourceRequest(activeRequestId) || !mounted) {
+        return;
+      }
 
       final episodes = _convertEpisodes(
         episodeFuture.episodes!.reversed.toList(),
         episodeFuture.title ?? '',
       );
 
-      rawEpisodes.value = _createRawEpisodes(episodes);
-      episodeList.value = _renewEpisodeData(episodes);
-      searchedTitle.value = media.title;
-      _applyFillerInfo(); 
+      rawEpisodes.assignAll(_cloneEpisodes(episodes));
+      episodeList.assignAll(_renewEpisodeData(_cloneEpisodes(episodes)));
+      searchedTitle.value = "Found: ${media.title}";
+      _applyFillerInfo();
       if (mounted) {
         setState(() {});
       }
-      applyAnifyCovers();
+      _updateAnifyAvailabilityForSource();
+      if (disableAnifyForCurrentSource.value) {
+        return;
+      }
+      await applyAnifyCovers(requestId: activeRequestId);
     } catch (e) {
+      if (_isStaleSourceRequest(activeRequestId) || !mounted) {
+        return;
+      }
       episodeError.value = true;
       Logger.i(e.toString());
     }
   }
 
-  Future<void> applyAnifyCovers() async {
+  Future<void> applyAnifyCovers({int? requestId}) async {
+    final activeRequestId = requestId ?? _sourceRequestVersion;
+    final baseEpisodes = List<Episode>.from(episodeList);
     final newEps = await AnilistData.fetchEpisodesFromAnify(
       widget.media.id.toString(),
-      episodeList.value,
+      baseEpisodes,
     );
+    if (_isStaleSourceRequest(activeRequestId) || !mounted) {
+      return;
+    }
     if (newEps.isNotEmpty &&
         newEps.first.thumbnail == null &&
         (newEps.first.thumbnail?.isEmpty ?? true)) {
       showAnify.value = false;
     }
-    episodeList.value = newEps;
-    _applyFillerInfo(); 
+    episodeList.assignAll(newEps);
+    _applyFillerInfo();
     if (mounted) {
       setState(() {});
     }
   }
 
-  List<Episode> _createRawEpisodes(List<Episode> eps) {
-    final newEps = eps
-        .map((e) => Episode(title: e.title, number: e.number, link: e.link))
+  List<Episode> _cloneEpisodes(List<Episode> episodes) {
+    return episodes
+        .map((episode) => Episode.fromJson(episode.toJson()))
         .toList();
-    return newEps;
   }
 
   List<Episode> _convertEpisodes(List<dynamic> episodes, String title) {
-    return episodes.map((ep) => DEpisodeToEpisode(ep)).toList();
+    final data = episodes.map((ep) => DEpisodeToEpisode(ep)).toList();
+
+    if (data.isEmpty) return data;
+
+    if (data.first.sortMap.isNotEmpty && data.first.sortMap['season'] != null) {
+      data.sort((a, b) {
+        final seasonA = int.tryParse(a.sortMap['season'] ?? '0') ?? 0;
+        final seasonB = int.tryParse(b.sortMap['season'] ?? '0') ?? 0;
+
+        if (seasonA != seasonB) {
+          return seasonA.compareTo(seasonB);
+        }
+
+        return _compareEpisodeNumberStrings(a.number, b.number);
+      });
+    }
+
+    return data;
   }
 
   List<Episode> _renewEpisodeData(List<Episode> episodes) {
+    if (episodes.any((episode) => episode.sortMap.isNotEmpty)) {
+      return episodes;
+    }
+
     if (episodes.length >= 3 &&
         (int.tryParse(episodes[0].number) ?? 0) > 3 &&
         (int.tryParse(episodes[1].number) ?? 0) > 3 &&
@@ -328,6 +492,18 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
       seenNumbers.add(episode.number);
       return episode;
     }).toList();
+  }
+
+  int _compareEpisodeNumberStrings(String first, String second) {
+    final firstNumber = double.tryParse(first.trim());
+    final secondNumber = double.tryParse(second.trim());
+
+    if (firstNumber != null && secondNumber != null) {
+      return firstNumber.compareTo(secondNumber);
+    }
+    if (firstNumber != null) return -1;
+    if (secondNumber != null) return 1;
+    return first.compareTo(second);
   }
 
   void startCountdown(int arrivingAt) {
@@ -403,145 +579,191 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     );
   }
 
-  SingleChildScrollView _commonSaikouLayout(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 120),
-      child: Column(
-        children: [
-          GradientPoster(
-            data: anilistData,
-            tag: widget.tag,
-            posterUrl: widget.media.poster,
-          ),
-          if (anilistData != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20.0, 10, 20, 0),
-              child: Column(
-                children: [
-                  Obx(() {
-                    widget.media.serviceType.onlineService.animeList.value;
-                    return Row(
+  Widget _commonSaikouLayout(BuildContext context) {
+    return NestedScrollView(
+      headerSliverBuilder: (context, innerBoxIsScrolled) {
+        return [
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                GradientPoster(
+                  data: anilistData,
+                  tag: widget.tag,
+                  posterUrl: widget.media.poster,
+                ),
+                if (anilistData != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                    child: Column(
                       children: [
-                        if (widget.media.serviceType !=
-                                ServicesType.extensions &&
-                            widget.media.serviceType.onlineService.isLoggedIn
-                                .value) ...[
-                          Expanded(
-                            child: Container(
-                              height: 50,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outline
-                                      .opaque(0.2),
-                                ),
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainer
-                                    .opaque(0.5),
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () {
-                                    if (widget.media.serviceType.onlineService
-                                        .isLoggedIn.value) {
-                                      showListEditorModal(context);
-                                    } else {
-                                      snackBar("You aren't logged in Genius.",
-                                          duration: 1000);
-                                    }
-                                  },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      AnymexText(
-                                        text: convertAniListStatus(
-                                            animeStatus.value),
-                                        variant: TextVariant.bold,
+                        Obx(() {
+                          widget
+                              .media.serviceType.onlineService.animeList.value;
+                          return Row(
+                            children: [
+                              if (widget.media.serviceType !=
+                                      ServicesType.extensions &&
+                                  widget.media.serviceType.onlineService
+                                      .isLoggedIn.value) ...[
+                                Expanded(
+                                  child: Container(
+                                    height: 50,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
                                         color: Theme.of(context)
                                             .colorScheme
-                                            .primary,
+                                            .outline
+                                            .opaque(0.2),
                                       ),
-                                    ],
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainer
+                                          .opaque(0.5),
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () {
+                                          if (widget.media.serviceType
+                                              .onlineService.isLoggedIn.value) {
+                                            showListEditorModal(context);
+                                          } else {
+                                            snackBar(
+                                                "You aren't logged in Genius.",
+                                                duration: 1000);
+                                          }
+                                        },
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            AnymexText(
+                                              text: convertAniListStatus(
+                                                  animeStatus.value),
+                                              variant: TextVariant.bold,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Container(
-                            height: 50,
-                            width: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outline
-                                    .opaque(0.2),
-                              ),
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainer
-                                  .opaque(0.5),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                                const SizedBox(width: 7),
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: Icons.share_rounded,
+                                  onTap: _showShareOptions,
+                                ),
+                                const SizedBox(width: 7),
+                                if (CommunityService.votingEnabled)
+                                  RecommendIconButton(
+                                    media: anilistData!,
+                                    mediaItemType: ItemType.anime,
+                                    buttonBuilder: (onTap, icon) =>
+                                        _buildActionIconButton(
+                                      context: context,
+                                      icon: Icons.recommend_rounded,
+                                      onTap: onTap,
+                                    ),
+                                  ),
+                                if (CommunityService.votingEnabled)
+                                  const SizedBox(width: 7),
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: HugeIcons.strokeRoundedLibrary,
                                   onTap: () {
                                     showCustomListDialog(context, anilistData!);
                                   },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: const Icon(
-                                      HugeIcons.strokeRoundedLibrary)),
-                            ),
-                          ),
-                        ] else ...[
-                          Expanded(
-                            child: AnymexButton2(
-                              onTap: () {
-                                showCustomListDialog(context, anilistData!);
-                              },
-                              label: 'Add to Library',
-                              icon: HugeIcons.strokeRoundedLibrary,
-                            ),
-                          )
-                        ]
+                                ),
+                              ] else ...[
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: Icons.share_rounded,
+                                  onTap: _showShareOptions,
+                                ),
+                                const SizedBox(width: 7),
+                                Expanded(
+                                  child: AnymexButton2(
+                                    onTap: () {
+                                      showCustomListDialog(
+                                          context, anilistData!);
+                                    },
+                                    label: 'Add to Library',
+                                    icon: HugeIcons.strokeRoundedLibrary,
+                                  ),
+                                )
+                              ]
+                            ],
+                          );
+                        }),
+                        const SizedBox(height: 10),
+                        _buildProgressContainer(context)
                       ],
-                    );
-                  }),
-                  const SizedBox(height: 10),
-                  _buildProgressContainer(context)
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(
+                    height: 400,
+                    child: Center(child: AnymexProgressIndicator()),
+                  )
                 ],
-              ),
+              ],
             ),
-          ] else ...[
-            const SizedBox(
-              height: 400,
-              child: Center(child: AnymexProgressIndicator()),
-            )
-          ],
-          ExpandablePageView(
-            physics: const BouncingScrollPhysics(),
-            controller: controller,
-            onPageChanged: (index) {
-              selectedPage.value = index;
-            },
-            children: [
-              if (anilistData != null)
-                _buildCommonInfo(context)
-              else
-                const SizedBox.shrink(),
-              _buildEpisodeSection(context),
-              _buildCommentsSection(context)
-            ],
-          )
+          ),
+        ];
+      },
+      body: PageView(
+        physics: const BouncingScrollPhysics(),
+        controller: controller,
+        onPageChanged: (index) {
+          selectedPage.value = index;
+        },
+        children: [
+          _buildInfoPageBody(context),
+          _buildEpisodePageBody(context),
+          _buildCommentsPageBody(context),
         ],
       ),
+    );
+  }
+
+  Widget _buildInfoPageBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
+      child: anilistData != null
+          ? _buildCommonInfo(context)
+          : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildEpisodePageBody(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        EpisodeSection(
+          searchedTitle: searchedTitle,
+          anilistData: anilistData ?? widget.media,
+          episodeList: episodeList,
+          episodeError: episodeError,
+          mapToAnilist: () => _mapToService(),
+          getDetailsFromSource: (media) => _fetchSourceDetails(media),
+          isAnify: isAnify,
+          showAnify: showAnify,
+          disableAnifyForCurrentSource: disableAnifyForCurrentSource,
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+      ],
+    );
+  }
+
+  Widget _buildCommentsPageBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
+      child: _buildCommentsSection(context),
     );
   }
 
@@ -568,63 +790,136 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     return progress.toStringAsFixed(2);
   }
 
+  String _formatWatchTime(int totalMinutes) {
+    if (totalMinutes <= 0) return '—';
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
+    if (h == 0) return '${m}m';
+    return m > 0 ? '${h}h ${m}m' : '${h}h';
+  }
+
+  Widget _buildTimeStat(BuildContext context,
+      {required String label, required String value, required Color color}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: context.colors.surfaceContainer.opaque(0.3),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11, color: context.colors.onSurface.opaque(0.5))),
+            const SizedBox(height: 2),
+            AnymexText(
+                text: value,
+                size: 14,
+                variant: TextVariant.semiBold,
+                color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProgressContainer(BuildContext context) {
+    final int totalEps =
+        int.tryParse(anilistData?.totalEpisodes?.toString() ?? '0') ?? 0;
+    final int airedEps = (anilistData?.nextAiringEpisode?.episode ?? 1) - 1;
+    final int displayTotal = totalEps > 0 ? totalEps : airedEps;
+    final int watchedEps =
+        int.tryParse(currentAnime.value?.episodeCount?.toString() ?? '0') ?? 0;
+    final int remainingEps = (displayTotal - watchedEps).clamp(0, displayTotal);
+    final int? epDuration = int.tryParse(
+        (anilistData?.duration?.toString() ?? '')
+            .replaceAll(RegExp(r'[^0-9]'), ''));
+    final int totalMins = displayTotal * (epDuration ?? 0);
+    final int watchedMins = watchedEps * (epDuration ?? 0);
+    final int remainingMins = remainingEps * (epDuration ?? 0);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: context.colors.surfaceContainer.opaque(0.3),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Icon(
-            Icons.movie_filter_rounded,
-            color: context.colors.onSurface.opaque(0.7),
-            size: 16,
+          Row(
+            children: [
+              Icon(
+                Icons.movie_filter_rounded,
+                color: context.colors.onSurface.opaque(0.7),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AnymexTextSpans(
+                  fontSize: 14,
+                  spans: [
+                    AnymexTextSpan(
+                      text: "Episode ",
+                      color: context.colors.onSurface.opaque(0.7),
+                    ),
+                    AnymexTextSpan(
+                      text: currentAnime.value?.episodeCount?.toString() ?? '0',
+                      variant: TextVariant.bold,
+                      color: context.colors.primary,
+                    ),
+                    AnymexTextSpan(
+                      text: ' of ',
+                      color: context.colors.onSurface.opaque(0.7),
+                    ),
+                    AnymexTextSpan(
+                      text: anilistData?.totalEpisodes?.toString() ?? '??',
+                      variant: TextVariant.bold,
+                      color: context.colors.primary,
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color:
+                      context.colors.primary.opaque(0.1, iReallyMeanIt: true),
+                ),
+                child: Text(
+                  '${formatProgress(currentChapter: currentAnime.value?.episodeCount ?? 0, totalChapters: anilistData?.totalEpisodes ?? 0, altLength: 0)}%',
+                  style: TextStyle(
+                    color: context.colors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: AnymexTextSpans(
-              fontSize: 14,
-              spans: [
-                AnymexTextSpan(
-                  text: "Episode ",
-                  color: context.colors.onSurface.opaque(0.7),
-                ),
-                AnymexTextSpan(
-                  text: currentAnime.value?.episodeCount?.toString() ?? '0',
-                  variant: TextVariant.bold,
-                  color: context.colors.primary,
-                ),
-                AnymexTextSpan(
-                  text: ' of ',
-                  color: context.colors.onSurface.opaque(0.7),
-                ),
-                AnymexTextSpan(
-                  text: anilistData?.totalEpisodes.toString() ??
-                      anilistData?.totalEpisodes.toString() ??
-                      '??',
-                  variant: TextVariant.bold,
-                  color: context.colors.primary,
-                ),
+          if (displayTotal > 0 && epDuration != null && epDuration > 0) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _buildTimeStat(context,
+                    label: 'Total',
+                    value: _formatWatchTime(totalMins),
+                    color: context.colors.onSurface),
+                const SizedBox(width: 8),
+                _buildTimeStat(context,
+                    label: 'Watched',
+                    value: _formatWatchTime(watchedMins),
+                    color: context.colors.primary),
+                const SizedBox(width: 8),
+                _buildTimeStat(context,
+                    label: 'Remaining',
+                    value: _formatWatchTime(remainingMins),
+                    color: context.colors.error),
               ],
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: context.colors.primary.opaque(0.1, iReallyMeanIt: true),
-            ),
-            child: Text(
-              '${formatProgress(currentChapter: currentAnime.value?.episodeCount ?? 0, totalChapters: anilistData?.totalEpisodes ?? 0, altLength: 0)}%',
-              style: TextStyle(
-                color: context.colors.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -635,12 +930,15 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
       return EpisodeSection(
         searchedTitle: searchedTitle,
         anilistData: anilistData ?? widget.media,
-        episodeList: (isAnify.value) ? episodeList : rawEpisodes,
+        episodeList: (!disableAnifyForCurrentSource.value && isAnify.value)
+            ? episodeList
+            : rawEpisodes,
         episodeError: episodeError,
-        mapToAnilist: _mapToService,
-        getDetailsFromSource: _fetchSourceDetails,
+        mapToAnilist: () => _mapToService(),
+        getDetailsFromSource: (media) => _fetchSourceDetails(media),
         isAnify: isAnify,
         showAnify: showAnify,
+        disableAnifyForCurrentSource: disableAnifyForCurrentSource,
       );
     });
   }
@@ -655,7 +953,7 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Column(
             children: [
               const SizedBox(height: 20),
@@ -663,6 +961,9 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
                 () => AnimeStats(
                   data: anilistData!,
                   countdown: formatTime(timeLeft.value),
+                  friendsWatching: anilistData?.friendsWatching,
+                  totalEpisodes: anilistData?.totalEpisodes,
+                  serviceType: widget.media.serviceType,
                 ),
               ),
               const SizedBox(height: 20),
@@ -675,9 +976,15 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
           variant: DataVariant.relation,
         ),
         CharactersCarousel(characters: anilistData!.characters ?? []),
+        if (anilistData?.staff != null && anilistData!.staff!.isNotEmpty)
+          StaffCarousel(staff: anilistData!.staff!),
         ReusableCarousel(
           data: anilistData!.recommendations,
-          title: "Recommended Animes",
+          title: widget.media.serviceType == ServicesType.simkl
+              ? (anilistData!.id.endsWith('*MOVIE')
+                  ? 'Recommended Movies'
+                  : 'Recommended Shows')
+              : 'Recommended Animes',
           variant: DataVariant.recommendation,
         ),
       ],
@@ -711,14 +1018,14 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
                       20.multiplyRadius(),
                     )),
                 child: NavBarItem(
-                    isSelected: false,
-                    isVertical: true,
-                    onTap: () {
-                      Get.back();
-                    },
-                    selectedIcon: Iconsax.back_square,
-                    unselectedIcon: IconlyBold.arrow_left,
-                    label: "Back"),
+                  isSelected: false,
+                  isVertical: true,
+                  onTap: () {
+                    Get.back();
+                  },
+                  selectedIcon: Iconsax.back_square,
+                  unselectedIcon: IconlyBold.arrow_left,
+                ),
               ),
               const SizedBox(height: 10),
               ResponsiveNavBar(
@@ -774,10 +1081,10 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
 
   void showListEditorModal(BuildContext context) {
     showModalBottomSheet(
-      backgroundColor: context.colors.surfaceContainer,
+      backgroundColor: Colors.transparent,
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      showDragHandle: false,
       builder: (BuildContext context) {
         return ListEditorModal(
           animeStatus: animeStatus,
@@ -786,19 +1093,27 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
           animeProgress: animeProgress,
           currentAnime: currentAnime,
           media: anilistData ?? widget.media,
-          onUpdate: (id, score, status, progress) async {
+          onUpdate: (id, score, status, progress, season, startedAt,
+              completedAt, isPrivate) async {
             final fetcher = widget.media.serviceType;
             final id = fetcher.onlineService.currentMedia.value.id;
-            fetcher.onlineService.updateListEntry(UpdateListEntryParams(
+            await fetcher.onlineService.updateListEntry(UpdateListEntryParams(
                 listId: id ?? widget.media.id,
                 syncIds: anilistData?.idMal != null ? [anilistData!.idMal] : [],
                 isAnime: true,
                 score: score,
                 status: status,
-                progress: progress));
+                progress: progress,
+                season: season,
+                startedAt: startedAt,
+                completedAt: completedAt,
+                isPrivate: isPrivate));
             currentAnime.value?.score = score.toString();
             currentAnime.value?.watchingStatus = status;
             currentAnime.value?.episodeCount = progress.toString();
+            currentAnime.value?.startedAt = startedAt;
+            currentAnime.value?.completedAt = completedAt;
+            currentAnime.value?.isPrivate = isPrivate;
             setState(() {});
           },
           onDelete: (s) async {
@@ -806,7 +1121,7 @@ class _AnimeDetailsPageState extends State<AnimeDetailsPage> {
             final id = fetcher.onlineService.currentMedia.value.mediaListId ??
                 widget.media.id;
             await fetcher.onlineService.deleteListEntry(id, isAnime: true);
-            setState(() {});
+            _checkAnimePresence();
           },
         );
       },

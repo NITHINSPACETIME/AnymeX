@@ -1,20 +1,25 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:anymex/controllers/settings/settings.dart';
+import 'package:anymex/database/data_keys/keys.dart';
 import 'package:anymex/screens/anime/watch/controller/player_controller.dart';
 import 'package:anymex/utils/logger.dart';
-
-import 'package:anymex/controllers/settings/settings.dart';
+import 'package:anymex/utils/player_core_visual_settings.dart';
 import 'package:anymex/utils/shaders.dart';
+import 'package:anymex/utils/theme_extensions.dart';
+import 'package:anymex/widgets/common/custom_tiles.dart';
 import 'package:anymex/widgets/common/slider_semantics.dart';
 import 'package:anymex/widgets/custom_widgets/custom_expansion_tile.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/tv_wrapper.dart';
+import 'package:anymex/widgets/non_widgets/reusable_checkmark.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
 
 class ColorProfileManager {
+
   static const Map<String, Map<String, int>> profiles = {
     "cinema": {
       "brightness": 2,
@@ -175,10 +180,10 @@ class ColorProfileManager {
         for (final entry in settings.entries) {
           await (player.platform as dynamic)
               .setProperty(entry.key, entry.value.toString());
-          print('Applied ${entry.key}: ${entry.value}');
+          Logger.i('Applied ${entry.key}: ${entry.value}');
         }
       } catch (e) {
-        print('Error applying color profile: $e');
+        Logger.i('Error applying color profile: $e');
       }
     }
   }
@@ -192,8 +197,23 @@ class ColorProfileManager {
               .setProperty(entry.key, entry.value.toString());
         }
       } catch (e) {
-        print('Error applying custom settings: $e');
+        Logger.i('Error applying custom settings: $e');
       }
+    }
+  }
+
+  Future<void> resetToNatural(dynamic player) async {
+    await applyColorProfile('natural', player);
+  }
+
+  Future<void> resetShader(dynamic player) async {
+    try {
+      if (player.platform != null) {
+        await PlayerShaders.setShaders(player, "Default");
+        Logger.i('Shader reset to Default');
+      }
+    } catch (e) {
+      Logger.i('Error resetting shader: $e');
     }
   }
 }
@@ -226,11 +246,11 @@ class ColorProfileBottomSheet extends StatefulWidget {
         player: player,
         onProfileSelected: (profile) {
           controller.currentVisualProfile.value = profile;
-          controller.settings.preferences.put('currentVisualProfile', profile);
+          PlayerUiKeys.currentVisualProfile.set(profile);
         },
         onCustomSettingsChanged: (sett) {
           controller.customSettings.value = sett;
-          controller.settings.preferences.put('currentVisualSettings', sett);
+          PlayerUiKeys.currentVisualSettings.set(sett);
         },
       ),
     );
@@ -245,6 +265,7 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
     with TickerProviderStateMixin {
   late TabController _tabController;
   String _selectedProfile = '';
+  String _selectedShader = '';
   Map<String, int> _customSettings = {
     "brightness": 0,
     "contrast": 0,
@@ -252,17 +273,25 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
     "gamma": 0,
     "hue": 0,
   };
+  late Map<String, dynamic> _visualSettings;
+
+  bool get _experimentalEnabled =>
+      PlayerUiKeys.playerExperimentalEnabled.get<bool>(false);
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _selectedProfile = widget.currentProfile;
+    _selectedShader = settingsController.selectedShader.isEmpty
+        ? "Default"
+        : settingsController.selectedShader;
     if (widget.currentProfile.toLowerCase() == 'custom') {
       _customSettings = Map.from(widget.activeSettings);
     } else {
       _customSettings = Map.from(ColorProfileManager.profiles['natural']!);
     }
+    _visualSettings = PlayerCoreVisualSettings.getMpvVisualSettings();
   }
 
   @override
@@ -276,13 +305,107 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
     Logger.i('Applied ${profileName.toUpperCase()} profile');
   }
 
-  void _applyCustomSettings() async {
+  Future<void> _applyCustomSettings() async {
     setState(() => _selectedProfile = 'custom');
     await ColorProfileManager()
         .applyCustomSettings(_customSettings, widget.player);
     widget.onProfileSelected('custom');
     widget.onCustomSettingsChanged(_customSettings);
     _showProfileAppliedFeedback('Custom');
+  }
+
+  Future<void> _resetShaderToDefault() async {
+    setState(() {
+      _selectedShader = "Default";
+    });
+    await ColorProfileManager().resetShader(widget.player);
+    settingsController.selectedShader = "Default";
+    PlayerUiKeys.selectedShader.set("Default");
+    HapticFeedback.lightImpact();
+    Logger.i('Shader reset to Default');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Shader reset to Default'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _resetPresetToNatural() async {
+    setState(() {
+      _selectedProfile = 'natural';
+    });
+    await ColorProfileManager().resetToNatural(widget.player);
+    widget.onProfileSelected('natural');
+    _showProfileAppliedFeedback('natural');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Reset to Natural profile'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _resetCustomToDefault() async {
+    setState(() {
+      _customSettings = Map.from(ColorProfileManager.profiles['natural']!);
+    });
+    await _applyCustomSettings();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Custom settings reset to default'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _applyVisualSettings() async {
+    if (!_experimentalEnabled) return;
+    PlayerUiKeys.mpvVisualSettings.set(_visualSettings);
+    await PlayerCoreVisualSettings.applyMpvVisualSettings(widget.player);
+  }
+
+  Future<void> _resetVisualToDefault() async {
+    setState(() {
+      _visualSettings = Map<String, dynamic>.from(
+        PlayerCoreVisualSettings.mpvVisualDefaults,
+      );
+    });
+    await _applyVisualSettings();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Visual settings reset to defaults'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -363,7 +486,17 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
                     children: [
                       Icon(Iconsax.eye, size: 20),
                       SizedBox(width: 8),
-                      Text('Shaders'),
+                      AnymexText.semiBold(text: 'Shaders'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.movie_filter_rounded, size: 20),
+                      SizedBox(width: 8),
+                      AnymexText.semiBold(text: 'Visual'),
                     ],
                   ),
                 ),
@@ -373,7 +506,7 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
                     children: [
                       Icon(Icons.dashboard_customize, size: 20),
                       SizedBox(width: 8),
-                      Text('Presets'),
+                      AnymexText.semiBold(text: 'Presets'),
                     ],
                   ),
                 ),
@@ -383,7 +516,7 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
                     children: [
                       Icon(Icons.tune, size: 20),
                       SizedBox(width: 8),
-                      Text('Custom'),
+                      AnymexText.semiBold(text: 'Custom'),
                     ],
                   ),
                 ),
@@ -411,6 +544,7 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
               controller: _tabController,
               children: [
                 _buildShadersTab(theme),
+                _buildVisualTab(theme),
                 _buildPresetsTab(theme),
                 _buildCustomTab(theme),
               ],
@@ -422,157 +556,193 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
   }
 
   Widget _buildShadersTab(ThemeData theme) {
-    bool enableShaders = (settingsController.preferences
-        .get('shaders_enabled', defaultValue: false));
-    return Opacity(
-      opacity: enableShaders ? 1 : 0.3,
-      child: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primaryContainer.opaque(0.3),
-                  theme.colorScheme.secondaryContainer.opaque(0.3),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
+    bool enableShaders = PlayerUiKeys.shadersEnabled.get<bool>(false);
+    return Column(
+      children: [
+        Expanded(
+          child: Opacity(
+            opacity: enableShaders ? 1 : 0.3,
+            child: ListView(
+              padding: const EdgeInsets.all(24),
               children: [
-                Icon(
-                  Icons.info_outline,
-                  color: theme.colorScheme.primary,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    enableShaders
-                        ? 'Choose a shader that matches your viewing preference'
-                        : 'Shaders are disabled (Enable them from Settings > Experimental)',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.primaryContainer.opaque(0.3),
+                        theme.colorScheme.secondaryContainer.opaque(0.3),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: theme.colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          enableShaders
+                              ? 'Choose a shader that matches your viewing preference'
+                              : 'Shaders are disabled (Enable them from Settings > Experimental)',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AnymexExpansionTile(
+                  title: 'ANIME 4K',
+                  initialExpanded: true,
+                  content: Column(
+                    children: ["Default", ...PlayerShaders.getShaders()]
+                        .map((shader) {
+                      return Obx(() {
+                        final isSelected = shader == "Default"
+                            ? settingsController.selectedShader.isEmpty ||
+                                settingsController.selectedShader == shader
+                            : settingsController.selectedShader == shader;
+                        return IgnorePointer(
+                          ignoring: !enableShaders,
+                          child: AnymexOnTap(
+                            onTap: () => setShaders(shader),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: isSelected
+                                      ? LinearGradient(
+                                          colors: [
+                                            theme.colorScheme.primaryContainer,
+                                            theme.colorScheme.primaryContainer
+                                                .opaque(0.8),
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        )
+                                      : null,
+                                  color: isSelected
+                                      ? null
+                                      : theme.colorScheme.surfaceVariant
+                                          .opaque(0.5),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: isSelected
+                                      ? Border.all(
+                                          color: theme.colorScheme.primary,
+                                          width: 2,
+                                        )
+                                      : Border.all(
+                                          color: theme.colorScheme.outline
+                                              .opaque(0.2),
+                                          width: 1,
+                                        ),
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                            color: theme.colorScheme.primary
+                                                .opaque(0.2),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            shader,
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: isSelected
+                                                  ? theme.colorScheme
+                                                      .onPrimaryContainer
+                                                  : theme.colorScheme.onSurface,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.check,
+                                          color: theme.colorScheme.onPrimary,
+                                          size: 16,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      });
+                    }).toList(),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          AnymexExpansionTile(
-            title: 'ANIME 4K',
-            initialExpanded: true,
-            content: Column(
-              children:
-                  ["Default", ...PlayerShaders.getShaders()].map((shader) {
-                return Obx(() {
-                  final isSelected = shader == "Default"
-                      ? settingsController.selectedShader.isEmpty ||
-                          settingsController.selectedShader == shader
-                      : settingsController.selectedShader == shader;
-                  return IgnorePointer(
-                    ignoring: !enableShaders,
-                    child: AnymexOnTap(
-                      onTap: () => setShaders(shader),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            gradient: isSelected
-                                ? LinearGradient(
-                                    colors: [
-                                      theme.colorScheme.primaryContainer,
-                                      theme.colorScheme.primaryContainer
-                                          .opaque(0.8),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  )
-                                : null,
-                            color: isSelected
-                                ? null
-                                : theme.colorScheme.surfaceVariant
-                                    .opaque(0.5),
-                            borderRadius: BorderRadius.circular(16),
-                            border: isSelected
-                                ? Border.all(
-                                    color: theme.colorScheme.primary,
-                                    width: 2,
-                                  )
-                                : Border.all(
-                                    color: theme.colorScheme.outline
-                                        .opaque(0.2),
-                                    width: 1,
-                                  ),
-                            boxShadow: isSelected
-                                ? [
-                                    BoxShadow(
-                                      color: theme.colorScheme.primary
-                                          .opaque(0.2),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      shader,
-                                      style:
-                                          theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        color: isSelected
-                                            ? theme
-                                                .colorScheme.onPrimaryContainer
-                                            : theme.colorScheme.onSurface,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (isSelected)
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.check,
-                                    color: theme.colorScheme.onPrimary,
-                                    size: 16,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                });
-              }).toList(),
+        ),
+        // Reset button for Shaders tab
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: enableShaders ? _resetShaderToDefault : null,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.refresh, size: 20),
+                  SizedBox(width: 8),
+                  Text('Reset Shader to Default'),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  void setShaders(String message, {bool backOut = true}) async {
-    PlayerShaders.setShaders(widget.player, message);
+  Future<void> setShaders(String message, {bool backOut = true}) async {
+    await PlayerShaders.setShaders(widget.player, message);
+    settingsController.selectedShader = message == "Default" ? "" : message;
+    PlayerUiKeys.selectedShader.set(message == "Default" ? "" : message);
+    setState(() {
+      _selectedShader = message;
+    });
+    HapticFeedback.lightImpact();
     if (backOut) {
       Navigator.pop(context);
     }
@@ -586,264 +756,588 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
       'Other': ['natural', 'dark', 'warm', 'cool', 'grayscale'],
     };
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
+    return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                theme.colorScheme.primaryContainer.opaque(0.3),
-                theme.colorScheme.secondaryContainer.opaque(0.3),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(24),
             children: [
-              Icon(
-                Icons.info_outline,
-                color: theme.colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Choose a preset that matches your viewing preference',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primaryContainer.opaque(0.3),
+                      theme.colorScheme.secondaryContainer.opaque(0.3),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Choose a preset that matches your viewing preference',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        ...groupedProfiles.entries.map((category) {
-          return AnymexExpansionTile(
-            title: category.key,
-            initialExpanded: true,
-            content: Column(
-              children: category.value.map((profileKey) {
-                final isSelected = _selectedProfile == profileKey;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () async {
-                        setState(() => _selectedProfile = profileKey);
-                        await ColorProfileManager()
-                            .applyColorProfile(profileKey, widget.player);
-                        widget.onProfileSelected(profileKey);
-                        _showProfileAppliedFeedback(profileKey);
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: isSelected
-                              ? LinearGradient(
-                                  colors: [
-                                    theme.colorScheme.primaryContainer,
-                                    theme.colorScheme.primaryContainer
-                                        .opaque(0.8),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
-                          color: isSelected
-                              ? null
-                              : theme.colorScheme.surfaceVariant
-                                  .opaque(0.5),
-                          borderRadius: BorderRadius.circular(16),
-                          border: isSelected
-                              ? Border.all(
-                                  color: theme.colorScheme.primary,
-                                  width: 2,
-                                )
-                              : Border.all(
-                                  color: theme.colorScheme.outline
-                                      .opaque(0.2),
-                                  width: 1,
-                                ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: theme.colorScheme.primary
-                                        .opaque(0.2),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Row(
-                          children: [
-                            AnimatedContainer(
+              const SizedBox(height: 20),
+              ...groupedProfiles.entries.map((category) {
+                return AnymexExpansionTile(
+                  title: category.key,
+                  initialExpanded: true,
+                  content: Column(
+                    children: category.value.map((profileKey) {
+                      final isSelected = _selectedProfile == profileKey;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () async {
+                              setState(() => _selectedProfile = profileKey);
+                              await ColorProfileManager()
+                                  .applyColorProfile(profileKey, widget.player);
+                              widget.onProfileSelected(profileKey);
+                              _showProfileAppliedFeedback(profileKey);
+                            },
+                            borderRadius: BorderRadius.circular(16),
+                            child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 gradient: isSelected
                                     ? LinearGradient(
                                         colors: [
-                                          theme.colorScheme.primary,
-                                          theme.colorScheme.primary
+                                          theme.colorScheme.primaryContainer,
+                                          theme.colorScheme.primaryContainer
                                               .opaque(0.8),
                                         ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
                                       )
                                     : null,
                                 color: isSelected
                                     ? null
-                                    : theme.colorScheme.surface,
-                                borderRadius: BorderRadius.circular(12),
+                                    : theme.colorScheme.surfaceVariant
+                                        .opaque(0.5),
+                                borderRadius: BorderRadius.circular(16),
+                                border: isSelected
+                                    ? Border.all(
+                                        color: theme.colorScheme.primary,
+                                        width: 2,
+                                      )
+                                    : Border.all(
+                                        color: theme.colorScheme.outline
+                                            .opaque(0.2),
+                                        width: 1,
+                                      ),
                                 boxShadow: isSelected
                                     ? [
                                         BoxShadow(
                                           color: theme.colorScheme.primary
-                                              .opaque(0.3),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
+                                              .opaque(0.2),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
                                         ),
                                       ]
                                     : null,
                               ),
-                              child: Icon(
-                                ColorProfileManager.profileIcons[profileKey],
-                                color: isSelected
-                                    ? theme.colorScheme.onPrimary
-                                    : theme.colorScheme.onSurface,
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    profileKey
-                                        .replaceAll('_', ' ')
-                                        .toUpperCase(),
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      gradient: isSelected
+                                          ? LinearGradient(
+                                              colors: [
+                                                theme.colorScheme.primary,
+                                                theme.colorScheme.primary
+                                                    .opaque(0.8),
+                                              ],
+                                            )
+                                          : null,
                                       color: isSelected
-                                          ? theme.colorScheme.onPrimaryContainer
+                                          ? null
+                                          : theme.colorScheme.surface,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: isSelected
+                                          ? [
+                                              BoxShadow(
+                                                color: theme.colorScheme.primary
+                                                    .opaque(0.3),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: Icon(
+                                      ColorProfileManager
+                                          .profileIcons[profileKey],
+                                      color: isSelected
+                                          ? theme.colorScheme.onPrimary
                                           : theme.colorScheme.onSurface,
+                                      size: 24,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    ColorProfileManager
-                                            .profileDescriptions[profileKey] ??
-                                        '',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: isSelected
-                                          ? theme.colorScheme.onPrimaryContainer
-                                              .opaque(0.8)
-                                          : theme.colorScheme.onSurfaceVariant,
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          profileKey
+                                              .replaceAll('_', ' ')
+                                              .toUpperCase(),
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: isSelected
+                                                ? theme.colorScheme
+                                                    .onPrimaryContainer
+                                                : theme.colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          ColorProfileManager
+                                                      .profileDescriptions[
+                                                  profileKey] ??
+                                              '',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: isSelected
+                                                ? theme.colorScheme
+                                                    .onPrimaryContainer
+                                                    .opaque(0.8)
+                                                : theme.colorScheme
+                                                    .onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                  if (isSelected)
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.check,
+                                        color: theme.colorScheme.onPrimary,
+                                        size: 16,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
-                            if (isSelected)
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.check,
-                                  color: theme.colorScheme.onPrimary,
-                                  size: 16,
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    }).toList(),
                   ),
                 );
-              }).toList(),
+              }),
+            ],
+          ),
+        ),
+        // Reset button for Presets tab
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _resetPresetToNatural,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.refresh, size: 20),
+                  SizedBox(width: 8),
+                  Text('Reset to Natural Profile'),
+                ],
+              ),
             ),
-          );
-        }),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildCustomTab(ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
+  Widget _buildVisualTab(ThemeData theme) {
+    if (!_experimentalEnabled) {
+      return _buildVisualLockedState(theme);
+    }
+
+    return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                theme.colorScheme.primaryContainer.opaque(0.3),
-                theme.colorScheme.secondaryContainer.opaque(0.3),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(24),
             children: [
-              Icon(
-                Icons.tune,
-                color: theme.colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Fine-tune individual settings to your preference',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primaryContainer.opaque(0.3),
+                      theme.colorScheme.secondaryContainer.opaque(0.3),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                child: Row(
+                  children: [
+                    Icon(Icons.tune_rounded,
+                        color: theme.colorScheme.primary, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'These controls directly affect mpv rendering quality & picture output',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _buildVisualSwitchTile(
+                keyName: 'deband',
+                title: 'Deband',
+                description: 'Reduce color banding in gradients',
+                icon: Icons.gradient_rounded,
+              ),
+              _buildVisualSwitchTile(
+                keyName: 'correctDownscaling',
+                title: 'Correct Downscaling',
+                description: 'Improve quality when scaling down video',
+                icon: Icons.fit_screen_rounded,
+              ),
+              _buildVisualSwitchTile(
+                keyName: 'sigmoidUpscaling',
+                title: 'Sigmoid Upscaling',
+                description: 'Reduce haloing while upscaling',
+                icon: Icons.auto_fix_high_rounded,
+              ),
+              _buildVisualSwitchTile(
+                keyName: 'temporalDither',
+                title: 'Temporal Dither',
+                description: 'Smoother gradients with slight temporal noise',
+                icon: Icons.grain_rounded,
+              ),
+              _buildVisualSelectionTile(
+                keyName: 'scale',
+                title: 'Luma Upscaler',
+                icon: Icons.zoom_in_map_rounded,
+                items: const [
+                  'bilinear',
+                  'bicubic',
+                  'spline36',
+                  'ewa_lanczossharp',
+                ],
+              ),
+              _buildVisualSelectionTile(
+                keyName: 'cscale',
+                title: 'Chroma Upscaler',
+                icon: Icons.color_lens_rounded,
+                items: const [
+                  'bilinear',
+                  'bicubic',
+                  'spline36',
+                  'ewa_lanczossharp',
+                ],
+              ),
+              _buildVisualSelectionTile(
+                keyName: 'dscale',
+                title: 'Downscaler',
+                icon: Icons.zoom_out_map_rounded,
+                items: const ['bilinear', 'bicubic', 'mitchell', 'spline36'],
+              ),
+              _buildVisualSelectionTile(
+                keyName: 'ditherDepth',
+                title: 'Dither Depth',
+                icon: Icons.blur_linear_rounded,
+                items: const ['auto', '8', '10', '12'],
+              ),
+              _buildVisualSelectionTile(
+                keyName: 'toneMapping',
+                title: 'Tone Mapping',
+                icon: Icons.hdr_auto_rounded,
+                items: const ['auto', 'mobius', 'reinhard', 'hable', 'bt.2390'],
+              ),
+              _buildVisualSliderTile(
+                keyName: 'debandIterations',
+                title: 'Deband Iterations',
+                description: 'More iterations = stronger debanding',
+                icon: Icons.layers_rounded,
+                min: 1,
+                max: 4,
+                divisions: 3,
+              ),
+              _buildVisualSliderTile(
+                keyName: 'debandThreshold',
+                title: 'Deband Threshold',
+                description: 'Higher value increases debanding strength',
+                icon: Icons.tune_rounded,
+                min: 16,
+                max: 128,
+                divisions: 28,
+              ),
+              _buildVisualSliderTile(
+                keyName: 'targetPeak',
+                title: 'Target Peak',
+                description: 'HDR tone mapping target peak',
+                icon: Icons.brightness_6_rounded,
+                min: 50,
+                max: 1000,
+                divisions: 38,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        ..._customSettings.keys.map((setting) {
-          return _buildSliderTile(setting, theme);
-        }),
-        const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonal(
-            onPressed: () {
-              setState(() {
-                _customSettings =
-                    Map.from(ColorProfileManager.profiles['natural']!);
-              });
-            },
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _resetVisualToDefault,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.refresh, size: 20),
+                  SizedBox(width: 8),
+                  Text('Reset Visual Settings'),
+                ],
               ),
             ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.refresh, size: 20),
-                SizedBox(width: 8),
-                Text('Reset to Default'),
-              ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVisualLockedState(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer.opaque(0.2),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.colorScheme.primary.opaque(0.35),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.science_outlined,
+                size: 28,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Visual settings are experimental',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Enable Experimental in Player Settings to use this tab.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVisualSwitchTile({
+    required String keyName,
+    required String title,
+    required String description,
+    required IconData icon,
+  }) {
+    return CustomSwitchTile(
+      icon: icon,
+      title: title,
+      description: description,
+      switchValue: (_visualSettings[keyName] as bool?) ?? false,
+      onChanged: (value) {
+        setState(() => _visualSettings[keyName] = value);
+        _applyVisualSettings();
+      },
+    );
+  }
+
+  Widget _buildVisualSelectionTile({
+    required String keyName,
+    required String title,
+    required IconData icon,
+    required List<String> items,
+  }) {
+    final current = (_visualSettings[keyName] as String?) ?? items.first;
+    return CustomTile(
+      icon: icon,
+      title: title,
+      description: current,
+      isDescBold: true,
+      descColor: Theme.of(context).colorScheme.primary,
+      onTap: () {
+        showSelectionDialog<String>(
+          title: title,
+          items: items,
+          selectedItem: current.obs,
+          getTitle: (v) => v,
+          onItemSelected: (v) {
+            setState(() => _visualSettings[keyName] = v);
+            _applyVisualSettings();
+          },
+          leadingIcon: icon,
+        );
+      },
+    );
+  }
+
+  Widget _buildVisualSliderTile({
+    required String keyName,
+    required String title,
+    required String description,
+    required IconData icon,
+    required double min,
+    required double max,
+    required int divisions,
+  }) {
+    final value = ((_visualSettings[keyName] as num?) ?? min).toDouble();
+    return CustomSliderTile(
+      icon: icon,
+      title: title,
+      description: description,
+      sliderValue: value.clamp(min, max),
+      min: min,
+      max: max,
+      divisions: divisions.toDouble(),
+      label: value.round().toString(),
+      onChanged: (newValue) {
+        setState(() => _visualSettings[keyName] = newValue.round());
+        _applyVisualSettings();
+      },
+    );
+  }
+
+  Widget _buildCustomTab(ThemeData theme) {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primaryContainer.opaque(0.3),
+                      theme.colorScheme.secondaryContainer.opaque(0.3),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.tune,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Fine-tune individual settings to your preference',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ..._customSettings.keys.map((setting) {
+                return _buildSliderTile(setting, theme);
+              }),
+            ],
+          ),
+        ),
+        // Reset button for Custom tab
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _resetCustomToDefault,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.refresh, size: 20),
+                  SizedBox(width: 8),
+                  Text('Reset to Default Settings'),
+                ],
+              ),
             ),
           ),
         ),
@@ -924,7 +1418,7 @@ class _ColorProfileBottomSheetState extends State<ColorProfileBottomSheet>
               setState(() {
                 _customSettings[setting] = newValue.round();
               });
-              _applyCustomSettings(); // Apply changes immediately
+              _applyCustomSettings();
             },
           ),
           Row(

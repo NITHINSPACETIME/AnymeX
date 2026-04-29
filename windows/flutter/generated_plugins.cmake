@@ -3,13 +3,14 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  anymex_extension_runtime_bridge
   app_links
-  dartotsu_extension_bridge
   desktop_webview_window
   dynamic_color
   firebase_core
   flutter_inappwebview_windows
   flutter_qjs
+  flutter_tts
   isar_community_flutter_libs
   media_kit_libs_windows_video
   media_kit_video
@@ -25,6 +26,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   flutter_discord_rpc_fork
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

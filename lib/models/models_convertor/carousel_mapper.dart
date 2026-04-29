@@ -1,11 +1,12 @@
 import 'package:anymex/controllers/service_handler/service_handler.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
+import 'package:anymex/controllers/services/community_service.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/models/Anilist/anilist_media_user.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/models/Media/relation.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
 import 'package:anymex/models/models_convertor/carousel/carousel_data.dart';
 import 'package:anymex/utils/function.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 
 extension DMediaMapper on DMedia {
   CarouselData toCarouselData({
@@ -28,7 +29,7 @@ extension OfflineMediaMapper on OfflineMedia {
     bool isManga = false,
   }) {
     return CarouselData(
-        id: id,
+        id: mediaId,
         title: name,
         poster: poster,
         source: currentChapter?.sourceName ?? currentEpisode?.source,
@@ -83,5 +84,21 @@ extension MediaMapper on Media {
         poster: poster,
         extraData: rating.toString(),
         releasing: status == "RELEASING");
+  }
+}
+
+extension CommunityMediaMapper on CommunityMedia {
+  CarouselData toCarouselData({bool isManga = false}) {
+    return CarouselData(
+        id: media.id.toString(),
+        title: displayTitle,
+        servicesType: ServicesType.anilist,
+        poster: media.poster,
+        extraData: media.rating.toString(),
+        releasing: media.status == "RELEASING",
+        anilistUserId: anilistUserId,
+        malUserId: malUserId,
+        author: author,
+        reason: reason);
   }
 }

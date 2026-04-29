@@ -2,16 +2,25 @@ import 'dart:convert';
 
 import 'package:anymex/controllers/service_handler/service_handler.dart';
 import 'package:anymex/controllers/services/anilist/anilist_auth.dart';
-import 'package:anymex/database/model/comment.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/database/comments/model/comment.dart';
 import 'package:anymex/models/Anilist/anilist_profile.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 
 class CommentumService extends GetxController {
-  static const String baseUrl =
-      'https://whzwmfxngelicmjyxwmr.supabase.co/functions/v1';
+  String get _baseUrl {
+    final envBase = (dotenv.env['COMMENTS_BASE_URL'] ?? '').trim();
+    if (envBase.isEmpty) {
+      throw StateError('COMMENTS_BASE_URL is missing in .env');
+    }
+    return envBase.endsWith('/')
+        ? envBase.substring(0, envBase.length - 1)
+        : envBase;
+  }
 
   final RxString currentUserRole = 'user'.obs;
 
@@ -21,8 +30,8 @@ class CommentumService extends GetxController {
   String? get currentUserAvatar => currentUser?.avatar;
 
   Future<String?> get _authToken async {
-    final storage = Get.find<AnilistAuth>().storage;
-    return await storage.get('auth_token');
+    Get.find<AnilistAuth>();
+    return AuthKeys.authToken.get<String?>();
   }
 
   String get _clientType => serviceHandler.serviceType.value.name;
@@ -32,7 +41,7 @@ class CommentumService extends GetxController {
     try {
       final response = await http.get(
         Uri.parse(
-            '$baseUrl/media?media_id=$mediaId&client_type=$_clientType&page=$page&limit=$limit&sort=$sort'),
+            '$_baseUrl/media?media_id=$mediaId&client_type=$_clientType&page=$page&limit=$limit&sort=$sort'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -109,7 +118,7 @@ class CommentumService extends GetxController {
       Logger.i('Creating comment with body: ${json.encode(requestBody)}');
 
       final response = await http.post(
-        Uri.parse('$baseUrl/comments'),
+        Uri.parse('$_baseUrl/comments'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -153,7 +162,7 @@ class CommentumService extends GetxController {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/comments'),
+        Uri.parse('$_baseUrl/comments'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -222,7 +231,7 @@ class CommentumService extends GetxController {
       }
 
       final response = await http.post(
-        Uri.parse('$baseUrl/comments'),
+        Uri.parse('$_baseUrl/comments'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -254,7 +263,7 @@ class CommentumService extends GetxController {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/votes'),
+        Uri.parse('$_baseUrl/votes'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -300,7 +309,7 @@ class CommentumService extends GetxController {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/reports'),
+        Uri.parse('$_baseUrl/reports'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -343,7 +352,7 @@ class CommentumService extends GetxController {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/reports'),
+        Uri.parse('$_baseUrl/reports'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -388,7 +397,7 @@ class CommentumService extends GetxController {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/moderation'),
+        Uri.parse('$_baseUrl/moderation'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -450,7 +459,7 @@ class CommentumService extends GetxController {
       if (shadowBan) body['shadow_ban'] = shadowBan;
 
       final response = await http.post(
-        Uri.parse('$baseUrl/moderation'),
+        Uri.parse('$_baseUrl/moderation'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -517,7 +526,7 @@ class CommentumService extends GetxController {
       if (token == null) return 'user';
 
       final response = await http.post(
-        Uri.parse('$baseUrl/users/role'),
+        Uri.parse('$_baseUrl/users/role'),
         headers: {
           'Content-Type': 'application/json',
         },

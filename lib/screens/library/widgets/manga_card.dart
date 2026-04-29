@@ -1,11 +1,12 @@
 import 'package:anymex/controllers/settings/methods.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/screens/manga/reading_page.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/widgets/custom_widgets/custom_expansion_tile.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/header.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/helper/tv_wrapper.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
@@ -153,6 +154,7 @@ class MangaHistoryCard extends StatelessWidget {
                                 mobileValue: 1, desktopValue: 2),
                             variant: TextVariant.bold,
                             overflow: TextOverflow.ellipsis,
+                            isMarquee: true,
                           ),
                           const SizedBox(height: 4),
                           if (data.name != null &&
@@ -164,6 +166,7 @@ class MangaHistoryCard extends StatelessWidget {
                               variant: TextVariant.regular,
                               color: colorScheme.onSurface.opaque(0.7),
                               overflow: TextOverflow.ellipsis,
+                              isMarquee: true,
                             ),
                           const Spacer(),
                           // Progress indicator

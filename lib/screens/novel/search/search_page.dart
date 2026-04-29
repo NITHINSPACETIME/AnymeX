@@ -1,15 +1,15 @@
 // ignore_for_file: deprecated_member_use
 import 'package:anymex/controllers/source/source_controller.dart';
+import 'package:anymex/database/data_keys/keys.dart';
 import 'package:anymex/utils/logger.dart';
 import 'package:anymex/screens/search/widgets/inline_search_history.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/widgets/common/reusable_carousel.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:get/get.dart';
-import 'package:hive/hive.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:anymex/widgets/common/glow.dart';
 
@@ -78,8 +78,8 @@ class _NovelSearchPageState extends State<NovelSearchPage>
 
   void _initializeData() {
     _searchController.text = '';
-    _searchedTerms.value = Hive.box('preferences')
-        .get('novel_searched_queries', defaultValue: <String>[]);
+    _searchedTerms.value =
+        SearchKeys.novelSearchedQueries.get<List<String>>([]);
 
     // Set initial state - don't perform search automatically
     setState(() {
@@ -90,10 +90,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
   }
 
   void _saveHistory() {
-    Hive.box('preferences').put(
-      'novel_searched_queries',
-      _searchedTerms.toList(),
-    );
+    SearchKeys.novelSearchedQueries.set(_searchedTerms.toList());
   }
 
   Future<void> _performSearch({
@@ -221,8 +218,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             ),
         decoration: InputDecoration(
           filled: true,
-          fillColor:
-              context.colors.surfaceContainer.opaque(.5),
+          fillColor: context.colors.surfaceContainer.opaque(.5),
           hintText: 'Search Novel...',
           hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: context.colors.onSurface.opaque(0.5),
@@ -244,10 +240,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
                   },
                   icon: Icon(
                     Iconsax.close_circle,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .opaque(0.7),
+                    color: Theme.of(context).colorScheme.onSurface.opaque(0.7),
                   ),
                 )
               : null,
@@ -307,10 +300,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceVariant
-                    .opaque(0.5),
+                color: Theme.of(context).colorScheme.surfaceVariant.opaque(0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -330,10 +320,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Text(
               'Enter a novel title to start searching',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .opaque(0.7),
+                    color: Theme.of(context).colorScheme.onSurface.opaque(0.7),
                   ),
               textAlign: TextAlign.center,
             ),
@@ -361,10 +348,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Text(
               'Searching...',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .opaque(0.7),
+                    color: Theme.of(context).colorScheme.onSurface.opaque(0.7),
                     fontWeight: FontWeight.w500,
                   ),
             ),
@@ -403,18 +387,14 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Text(
               _errorMessage ?? 'Please try again later',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .opaque(0.7),
+                    color: Theme.of(context).colorScheme.onSurface.opaque(0.7),
                   ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () => _performSearch(),
-              icon: Icon(Iconsax.refresh,
-                  color: context.colors.onPrimary),
+              icon: Icon(Iconsax.refresh, color: context.colors.onPrimary),
               label: const Text('Try Again'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: context.colors.primary,
@@ -441,10 +421,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceVariant
-                    .opaque(0.5),
+                color: Theme.of(context).colorScheme.surfaceVariant.opaque(0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -464,10 +441,7 @@ class _NovelSearchPageState extends State<NovelSearchPage>
             Text(
               'Try adjusting your search terms or filters',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .opaque(0.7),
+                    color: Theme.of(context).colorScheme.onSurface.opaque(0.7),
                   ),
               textAlign: TextAlign.center,
             ),
@@ -522,15 +496,11 @@ class _NovelSearchPageState extends State<NovelSearchPage>
                     Container(
                       margin: const EdgeInsets.only(right: 5),
                       decoration: BoxDecoration(
-                        color: context.colors
-                            .surface
-                            .opaque(0.3),
+                        color: context.colors.surface.opaque(0.3),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outline
-                              .opaque(0.3),
+                          color:
+                              Theme.of(context).colorScheme.outline.opaque(0.3),
                         ),
                       ),
                       child: IconButton(
@@ -564,21 +534,17 @@ class _NovelSearchPageState extends State<NovelSearchPage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .opaque(0.1),
+                          color:
+                              Theme.of(context).colorScheme.primary.opaque(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '${_extensionResults.length} sources',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(
-                                color: context.colors.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: context.colors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                         ),
                       ),
                       if (_extensionResults
@@ -589,10 +555,8 @@ class _NovelSearchPageState extends State<NovelSearchPage>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .opaque(0.1),
+                            color:
+                                Theme.of(context).colorScheme.error.opaque(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(

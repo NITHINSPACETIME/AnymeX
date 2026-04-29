@@ -1,10 +1,10 @@
 import 'package:anymex/controllers/services/backup_restore/backup_restore_service.dart';
 import 'package:anymex/screens/other_features.dart';
 import 'package:anymex/screens/settings/sub_settings/widgets/backup_and_restore_widgets.dart';
+import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/glow.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 import 'package:get/get.dart';
 
 class BackupRestorePage extends StatefulWidget {
@@ -27,17 +27,26 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     final passwordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
     bool usePassword = false;
+    bool backupSettings = true;
+    bool backupAuthTokens = false;
+    bool hasSelected = false;
 
-    final result = await showDialog<bool>(
+    await showDialog(
       context: context,
       builder: (context) => BackupPasswordDialog(
         passwordController: passwordController,
         confirmPasswordController: confirmPasswordController,
-        onUsePasswordChanged: (value) => usePassword = value,
+        onConfirm: (usePass, backSettings, backAuthTokens) {
+          usePassword = usePass;
+          backupSettings = backSettings;
+          backupAuthTokens = backAuthTokens;
+          hasSelected = true;
+          Navigator.of(context).pop();
+        },
       ),
     );
 
-    if (result != true) return;
+    if (!hasSelected) return;
 
     try {
       String? password;
@@ -49,7 +58,11 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         password = passwordController.text;
       }
 
-      final path = await controller.exportBackupToExternal(password: password);
+      final path = await controller.exportBackupToExternal(
+        password: password,
+        backupSettings: backupSettings,
+        backupAuthTokens: backupAuthTokens,
+      );
       if (path != null && mounted) {
         snackBar("Backup saved successfully!");
       }
@@ -69,6 +82,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       String? password;
 
       if (isEncrypted) {
+        if (!context.mounted) return;
         password = await _showPasswordDialog(context);
         if (password == null) return;
       }
@@ -83,11 +97,16 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         RestorePreviewSheet(
           info: info,
           isEncrypted: isEncrypted,
-          onConfirm: () async {
+        onConfirm: (restoreSettings, restoreAuthTokens) async {
             Get.back();
             try {
-              await controller.restoreBackup(path,
-                  password: password, merge: false);
+              await controller.restoreBackup(
+                path,
+                password: password,
+                merge: false,
+                restoreSettings: restoreSettings,
+                restoreAuthTokens: restoreAuthTokens,
+              );
               if (mounted) {
                 snackBar("Backup restored successfully!");
               }
@@ -134,8 +153,21 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   children: [
                     const _SectionHeader(title: "Current Library"),
                     const SizedBox(height: 16),
-                    Obx(() =>
-                        LibraryDashboard(stats: controller.getLibraryStats())),
+                    Obx(() {
+                      controller.isRestoring.value;
+                      return FutureBuilder(
+                        future: controller.getLibraryStats(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                                  ConnectionState.done &&
+                              snapshot.data != null) {
+                            return LibraryDashboard(stats: snapshot.data!);
+                          } else {
+                            return const CircularProgressIndicator();
+                          }
+                        },
+                      );
+                    }),
                     const SizedBox(height: 32),
                     const _SectionHeader(title: "Actions"),
                     const SizedBox(height: 16),

@@ -52,6 +52,10 @@ abstract class BasePlayer {
   Future<void> setAudioTrack(AudioTrack track);
 
   Future<void> setSubtitleTrack(SubtitleTrack track);
+  
+  Future<void> setSubtitleDelay(Duration delay);
+
+  Future<void> toggleVideoFit(BoxFit fit);
 
   Future<Uint8List?> screenshot({
     bool includeSubtitles = true,
@@ -84,7 +88,7 @@ class PlayerState {
     this.duration = Duration.zero,
     this.buffer = Duration.zero,
     this.isPlaying = false,
-    this.isBuffering = false,
+    this.isBuffering = true,
     this.volume = 1.0,
     this.rate = 1.0,
     this.videoHeight,
@@ -161,20 +165,28 @@ class SubtitleTrack {
   final String? title;
   final String? language;
   final String? url;
+  final Map<String, String>? headers;
 
   SubtitleTrack({
     required this.id,
     this.title,
     this.language,
     this.url,
+    this.headers,
   });
 
-  factory SubtitleTrack.uri(String uri, {String? title, String? language}) {
+  factory SubtitleTrack.uri(
+    String uri, {
+    String? title,
+    String? language,
+    Map<String, String>? headers,
+  }) {
     return SubtitleTrack(
       id: uri,
       title: title,
       language: language,
       url: uri,
+      headers: headers,
     );
   }
 
@@ -222,6 +234,8 @@ class PlayerConfiguration {
   final String hwdec;
   final PlayerType playerType;
   final bool enableCache;
+  final bool autoPlay;
+  final bool useBuffering;
   final Duration? seekAccuracy;
 
   PlayerConfiguration({
@@ -230,6 +244,8 @@ class PlayerConfiguration {
     this.hwdec = 'no',
     this.playerType = PlayerType.mediaKit,
     this.enableCache = true,
+    this.autoPlay = true,
+    this.useBuffering = true,
     this.seekAccuracy,
   });
 }

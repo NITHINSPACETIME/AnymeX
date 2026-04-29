@@ -6,13 +6,14 @@
 
 #include "generated_plugin_registrant.h"
 
+#include <anymex_extension_runtime_bridge/anymex_extension_runtime_bridge_plugin.h>
 #include <app_links/app_links_plugin_c_api.h>
-#include <dartotsu_extension_bridge/dartotsu_extension_bridge_plugin_c_api.h>
 #include <desktop_webview_window/desktop_webview_window_plugin.h>
 #include <dynamic_color/dynamic_color_plugin_c_api.h>
 #include <firebase_core/firebase_core_plugin_c_api.h>
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
 #include <flutter_qjs/flutter_qjs_plugin.h>
+#include <flutter_tts/flutter_tts_plugin.h>
 #include <isar_community_flutter_libs/isar_flutter_libs_plugin.h>
 #include <media_kit_libs_windows_video/media_kit_libs_windows_video_plugin_c_api.h>
 #include <media_kit_video/media_kit_video_plugin_c_api.h>
@@ -26,10 +27,10 @@
 #include <window_to_front/window_to_front_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
+  AnymexExtensionRuntimeBridgePluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("AnymexExtensionRuntimeBridgePlugin"));
   AppLinksPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("AppLinksPluginCApi"));
-  DartotsuExtensionBridgePluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("DartotsuExtensionBridgePluginCApi"));
   DesktopWebviewWindowPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("DesktopWebviewWindowPlugin"));
   DynamicColorPluginCApiRegisterWithRegistrar(
@@ -40,6 +41,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
   FlutterQjsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterQjsPlugin"));
+  FlutterTtsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterTtsPlugin"));
   IsarFlutterLibsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("IsarFlutterLibsPlugin"));
   MediaKitLibsWindowsVideoPluginCApiRegisterWithRegistrar(

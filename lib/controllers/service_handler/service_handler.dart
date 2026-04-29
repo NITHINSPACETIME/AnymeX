@@ -4,16 +4,16 @@ import 'package:anymex/controllers/services/anilist/anilist_data.dart';
 import 'package:anymex/controllers/services/mal/mal_service.dart';
 import 'package:anymex/controllers/services/simkl/simkl_service.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
+import 'package:anymex/database/data_keys/keys.dart';
 import 'package:anymex/models/Anilist/anilist_media_user.dart';
 import 'package:anymex/models/Anilist/anilist_profile.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/models/Service/base_service.dart';
 import 'package:anymex/models/Service/online_service.dart';
 import 'package:anymex/utils/logger.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 import 'package:get/get.dart';
-import 'package:hive/hive.dart';
 
 enum ServicesType {
   anilist,
@@ -120,18 +120,38 @@ class ServiceHandler extends GetxController {
   RxList<Widget> homeWidgets(BuildContext context) =>
       service.homeWidgets(context);
 
+  RxList<Widget> novelWidgets(BuildContext context) {
+    if (serviceType.value == ServicesType.anilist) {
+      return anilistService.mangaWidgets(context);
+    } else if (serviceType.value == ServicesType.mal) {
+      return malService.mangaWidgets(context);
+    } else {
+      return extensionService.novelSections;
+    }
+  }
+
+  Source? getSourceForMedia(Media media) {
+    if (media.serviceType == ServicesType.extensions) {
+      return extensionService.installedNovelExtensions.firstWhere(
+        (source) => source.name == media.sourceName,
+        orElse: () => extensionService.installedNovelExtensions.first,
+      );
+    }
+    return null;
+  }
+
   @override
   void onInit() {
     super.onInit();
-    _initServices();
+    serviceType.value =
+        ServicesType.values[ServiceKeys.serviceType.get<int>(0)];
   }
 
-  Future<void> _initServices() async {
-    final box = Hive.box('themeData');
-    serviceType.value =
-        ServicesType.values[box.get("serviceType", defaultValue: 0)];
-    await fetchHomePage();
-    await autoLogin();
+  @override
+  void onReady() {
+    super.onReady();
+    fetchHomePage();
+    autoLogin();
   }
 
   Future<void> fetchHomePage() => service.fetchHomePage();
@@ -153,8 +173,7 @@ class ServiceHandler extends GetxController {
       service.search(params);
 
   void changeService(ServicesType type) {
-    final box = Hive.box('themeData');
-    box.put("serviceType", type.index);
+    ServiceKeys.serviceType.set(type.index);
     serviceType.value = type;
     fetchHomePage();
   }

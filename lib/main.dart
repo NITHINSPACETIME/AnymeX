@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:anymex/controllers/cacher/cache_controller.dart';
+import 'package:anymex/screens/downloads/controller/download_controller.dart';
 import 'package:anymex/controllers/discord/discord_rpc.dart';
 import 'package:anymex/controllers/offline/offline_storage_controller.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
@@ -10,19 +11,15 @@ import 'package:anymex/controllers/services/anilist/anilist_auth.dart';
 import 'package:anymex/controllers/services/anilist/anilist_data.dart';
 import 'package:anymex/controllers/services/mal/mal_service.dart';
 import 'package:anymex/controllers/services/simkl/simkl_service.dart';
+import 'package:anymex/controllers/services/storage/storage_manager_service.dart';
+import 'package:anymex/controllers/services/community_service.dart';
 import 'package:anymex/controllers/settings/settings.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
+import 'package:anymex/controllers/sync/gist_sync_controller.dart';
 import 'package:anymex/controllers/theme.dart';
 import 'package:anymex/controllers/ui/greeting.dart';
+import 'package:anymex/database/database.dart';
 import 'package:anymex/firebase_options.dart';
-import 'package:anymex/models/Offline/Hive/chapter.dart';
-import 'package:anymex/models/Offline/Hive/custom_list.dart';
-import 'package:anymex/models/Offline/Hive/episode.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
-import 'package:anymex/models/Offline/Hive/offline_storage.dart';
-import 'package:anymex/models/Offline/Hive/video.dart';
-import 'package:anymex/models/player/player_adaptor.dart';
-import 'package:anymex/models/ui/ui_adaptor.dart';
 import 'package:anymex/screens/anime/home_page.dart';
 import 'package:anymex/screens/anime/widgets/comments/controller/comment_preloader.dart';
 import 'package:anymex/screens/extensions/ExtensionScreen.dart';
@@ -30,28 +27,29 @@ import 'package:anymex/screens/home_page.dart';
 import 'package:anymex/screens/library/my_library.dart';
 import 'package:anymex/screens/manga/home_page.dart';
 import 'package:anymex/services/commentum_service.dart';
-import 'package:anymex/utils/deeplink.dart';
+import 'package:anymex/utils/external_font_loader.dart';
 import 'package:anymex/utils/logger.dart';
+import 'package:anymex/utils/deeplink.dart';
 import 'package:anymex/utils/register_protocol/register_protocol.dart';
 import 'package:anymex/widgets/adaptive_wrapper.dart';
 import 'package:anymex/widgets/animation/more_page_transitions.dart';
 import 'package:anymex/widgets/common/glow.dart';
 import 'package:anymex/widgets/common/navbar.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_splash_screen.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_titlebar.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/non_widgets/settings_sheet.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
 import 'package:app_links/app_links.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:get/get.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:iconly/iconly.dart';
 import 'package:iconsax/iconsax.dart';
@@ -86,69 +84,6 @@ class MyCustomScrollBehavior extends MaterialScrollBehavior {
       };
 }
 
-void main(List<String> args) async {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-
-    await Logger.init();
-    await dotenv.load(fileName: ".env");
-
-    if (!Platform.isLinux) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-    }
-
-    if (Platform.isWindows) {
-      ['dar', 'anymex', 'sugoireads', 'mangayomi']
-          .forEach(registerProtocolHandler);
-    }
-    initDeepLinkListener();
-    HttpOverrides.global = MyHttpoverrides();
-    await initializeHive();
-    _initializeGetxController();
-    initializeDateFormatting();
-    MediaKit.ensureInitialized();
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      await windowManager.ensureInitialized();
-      if (Platform.isWindows) {
-        await AnymexTitleBar.initialize();
-      }
-    } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-          systemNavigationBarColor: Colors.transparent,
-          statusBarColor: Colors.transparent,
-          statusBarBrightness: Brightness.dark));
-    }
-
-    FlutterError.onError = (FlutterErrorDetails details) async {
-      FlutterError.presentError(details);
-      Logger.e("FLUTTER ERROR: ${details.exceptionAsString()}");
-      Logger.e("STACK: ${details.stack}");
-    };
-
-    runApp(
-      ChangeNotifierProvider(
-        create: (context) => ThemeProvider(),
-        child: const MyAdaptiveWrapper(child: MainApp()),
-      ),
-    );
-  }, (error, stackTrace) async {
-    Logger.e("CRASH: $error");
-    if (error.toString().contains('PathAccessException: lock failed')) {
-      Hive.deleteFromDisk();
-      await Hive.initFlutter('AnymeX');
-      Hive.deleteFromDisk();
-    }
-    Logger.e("STACK: $stackTrace");
-  }, zoneSpecification: ZoneSpecification(
-    print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
-      Logger.i(line);
-    },
-  ));
-}
-
 void initDeepLinkListener() async {
   if (Platform.isLinux) return;
 
@@ -165,40 +100,94 @@ void initDeepLinkListener() async {
   );
 }
 
-Future<void> initializeHive() async {
-  await Hive.initFlutter('AnymeX');
-  Hive.registerAdapter(VideoAdapter());
-  Hive.registerAdapter(TrackAdapter());
-  Hive.registerAdapter(UISettingsAdapter());
-  Hive.registerAdapter(PlayerSettingsAdapter());
-  Hive.registerAdapter(OfflineStorageAdapter());
-  Hive.registerAdapter(OfflineMediaAdapter());
-  Hive.registerAdapter(CustomListAdapter());
-  Hive.registerAdapter(ChapterAdapter());
-  Hive.registerAdapter(EpisodeAdapter());
-  await Hive.openBox('themeData');
-  await Hive.openBox('loginData');
-  await Hive.openBox('auth');
-  await Hive.openBox('preferences');
-  await Hive.openBox<UISettings>("UiSettings");
-  await Hive.openBox<PlayerSettings>("PlayerSettings");
+void main(List<String> args) async {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    if (Platform.isAndroid) {
+      FlutterDisplayMode.setHighRefreshRate().catchError((e) {
+        debugPrint("Error setting high refresh rate: $e");
+      });
+    }
+    ExternalFontLoader.loadAllFonts();
+
+    await Logger.init();
+    await dotenv.load(fileName: ".env");
+
+    if (!Platform.isLinux) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+
+    if (Platform.isWindows) {
+      ['dar', 'anymex', 'sugoireads', 'mangayomi']
+          .forEach(registerProtocolHandler);
+    }
+    await Database().init();
+    HttpOverrides.global = MyHttpoverrides();
+
+    _initializeGetxController();
+    initDeepLinkListener();
+    initializeDateFormatting();
+    MediaKit.ensureInitialized();
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      await windowManager.ensureInitialized();
+      if (Platform.isWindows) {
+        await AnymexTitleBar.initialize();
+      }
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemNavigationBarContrastEnforced: false,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark,
+          statusBarColor: Colors.transparent,
+          statusBarBrightness: Brightness.dark));
+    }
+
+    FlutterError.onError = (FlutterErrorDetails details) async {
+      FlutterError.presentError(details);
+      Logger.e("FLUTTER ERROR: ${details.exceptionAsString()}");
+      Logger.e("STACK: ${details.stack}");
+    };
+
+    runApp(
+      ChangeNotifierProvider(
+        create: (context) => ThemeProvider(),
+        child: const MainApp(),
+      ),
+    );
+  }, (error, stackTrace) async {
+    Logger.e("CRASH: $error");
+    Logger.e("STACK: $stackTrace");
+  }, zoneSpecification: ZoneSpecification(
+    print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
+      Logger.i(line);
+    },
+  ));
 }
 
 void _initializeGetxController() async {
+  Get.put(Settings());
   Get.put(OfflineStorageController());
   Get.put(AnilistAuth());
+  Get.put(CommunityService());
   Get.put(AnilistData());
   Get.put(SimklService());
   Get.put(MalService());
   Get.put(DiscordRPCController());
-  Get.put(SourceController());
-  Get.put(Settings());
+  if (!Get.isRegistered<SourceController>()) {
+    Get.put(SourceController());
+  }
   Get.put(ServiceHandler());
   Get.put(GreetingController());
   Get.put(CommentumService());
   Get.put(CommentPreloader());
+  Get.put(GistSyncController(), permanent: true);
+  Get.put(DownloadController(), permanent: true);
   Get.lazyPut(() => CacheController());
-  // DownloadManagerBinding.initializeDownloadManager();
+  await StorageManagerService().enforceImageCacheLimit();
 }
 
 class MainApp extends StatefulWidget {
@@ -210,11 +199,49 @@ class MainApp extends StatefulWidget {
 
 class _MainAppState extends State<MainApp> {
   bool _showMainApp = false;
+  bool _isFullScreen = false;
+
+  late FocusNode focusNode;
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_isFullScreen) {
+        AnymexTitleBar.setFullScreen(false);
+      } else {
+        BuildContext escapeContext = Get.context!;
+        if (Navigator.of(escapeContext).canPop()) {
+          Navigator.pop(escapeContext);
+        }
+      }
+      return KeyEventResult.handled;
+    } else if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.f11) {
+      AnymexTitleBar.toggleFullScreen();
+      return KeyEventResult.handled;
+    } else if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.enter) {
+      final isAltPressed = HardwareKeyboard.instance.logicalKeysPressed
+              .contains(LogicalKeyboardKey.altLeft) ||
+          HardwareKeyboard.instance.logicalKeysPressed
+              .contains(LogicalKeyboardKey.altRight);
+      if (isAltPressed) {
+        AnymexTitleBar.toggleFullScreen();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   void initState() {
     super.initState();
-    // Show animated splash for 3 seconds, then main app
+
+    AnymexTitleBar.isFullScreen
+        .addListener(() => _isFullScreen = AnymexTitleBar.isFullScreen.value);
+
+    focusNode = FocusNode();
+
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
@@ -225,30 +252,19 @@ class _MainAppState extends State<MainApp> {
   }
 
   @override
+  void dispose() {
+    Logger.dispose();
+    focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeProvider>(context);
 
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      onKeyEvent: (KeyEvent event) async {
-        if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.escape) {
-            Navigator.pop(Get.context!);
-          } else if (event.logicalKey == LogicalKeyboardKey.f11) {
-            bool isFullScreen = await windowManager.isFullScreen();
-            AnymexTitleBar.setFullScreen(!isFullScreen);
-          } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-            final isAltPressed = HardwareKeyboard.instance.logicalKeysPressed
-                    .contains(LogicalKeyboardKey.altLeft) ||
-                HardwareKeyboard.instance.logicalKeysPressed
-                    .contains(LogicalKeyboardKey.altRight);
-            if (isAltPressed) {
-              bool isFullScreen = await windowManager.isFullScreen();
-              AnymexTitleBar.setFullScreen(!isFullScreen);
-            }
-          }
-        }
-      },
+    return Focus(
+      focusNode: focusNode,
+      onKeyEvent: _handleKeyEvent,
       child: GetMaterialApp(
         scrollBehavior: MyCustomScrollBehavior(),
         debugShowCheckedModeBanner: false,
@@ -270,7 +286,7 @@ class _MainAppState extends State<MainApp> {
           if (isDesktop) {
             return Stack(
               children: [
-                child!,
+                RepaintBoundary(child: child!),
                 Positioned(
                   top: 0,
                   left: 0,
@@ -308,11 +324,11 @@ class _FilterScreenState extends State<FilterScreen> {
   @override
   void initState() {
     super.initState();
-    
-    // Auto check for updates on app start
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final settings = Get.find<Settings>();
       settings.checkForUpdates(context);
+      settings.showWelcomeDialog(context);
     });
   }
 
@@ -399,12 +415,11 @@ class _FilterScreenState extends State<FilterScreen> {
                               child: authService.isLoggedIn.value
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(59),
-                                      child: CachedNetworkImage(
+                                      child: AnymeXImage(
                                           width: 40,
                                           height: 40,
                                           fit: BoxFit.cover,
-                                          errorWidget: (context, url, error) =>
-                                              const Icon(IconlyBold.profile),
+                                          radius: 0,
                                           imageUrl: authService
                                                   .profileData.value.avatar ??
                                               ''),
@@ -435,13 +450,12 @@ class _FilterScreenState extends State<FilterScreen> {
                         onTap: _onItemTapped,
                         label: 'Library',
                       ),
-                      if (sourceController.shouldShowExtensions.value)
-                        NavItem(
-                          unselectedIcon: Icons.extension_outlined,
-                          selectedIcon: Icons.extension_rounded,
-                          onTap: _onItemTapped,
-                          label: "Extensions",
-                        ),
+                      NavItem(
+                        unselectedIcon: Icons.extension_outlined,
+                        selectedIcon: Icons.extension_rounded,
+                        onTap: _onItemTapped,
+                        label: "Extensions",
+                      ),
                     ],
                   ),
                 ],

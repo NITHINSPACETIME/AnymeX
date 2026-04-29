@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:anymex/models/animethemes/anime_theme.dart';
 import 'package:anymex/utils/anime_themes_api.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:flutter/material.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:media_kit/media_kit.dart';
@@ -145,9 +147,10 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  widget.animeDetails.poster,
+                AnymeXImage(
+                  imageUrl: widget.animeDetails.poster,
                   fit: BoxFit.cover,
+                  radius: 0,
                 ),
                 BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
@@ -202,9 +205,10 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(16),
-                                    child: Image.network(
-                                      widget.animeDetails.poster,
+                                    child: AnymeXImage(
+                                      imageUrl: widget.animeDetails.poster,
                                       fit: BoxFit.cover,
+                                      radius: 0,
                                     ),
                                   ),
                                 ),
@@ -399,17 +403,16 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      theme.title,
+                    AnymexText(
+                      text: theme.title,
+                      size: 15,
+                      variant: TextVariant.semiBold,
+                      color: isCurrent
+                          ? colorScheme.primary
+                          : colorScheme.onSurface,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: isCurrent
-                            ? colorScheme.primary
-                            : colorScheme.onSurface,
-                      ),
+                      isMarquee: true,
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -434,16 +437,15 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            theme.artist.isNotEmpty
+                          child: AnymexText(
+                            text: theme.artist.isNotEmpty
                                 ? theme.artist
                                 : 'Unknown Artist',
+                            size: 12,
+                            color: colorScheme.onSurfaceVariant,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
+                            isMarquee: true,
                           ),
                         ),
                       ],
@@ -529,11 +531,12 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        widget.animeDetails.poster,
+                      child: AnymeXImage(
+                        imageUrl: widget.animeDetails.poster,
                         width: 42,
                         height: 42,
                         fit: BoxFit.cover,
+                        radius: 0,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -541,22 +544,23 @@ class _AnimeThemePlayerPageState extends State<AnimeThemePlayerPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            currentTheme.title,
+                          AnymexText(
+                            text: currentTheme.title,
+                            size: 13,
+                            variant: TextVariant.bold,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 13),
+                            isMarquee: true,
                           ),
-                          Text(
-                            currentTheme.artist.isNotEmpty
+                          AnymexText(
+                            text: currentTheme.artist.isNotEmpty
                                 ? currentTheme.artist
                                 : 'Unknown',
+                            size: 11,
+                            color: colorScheme.onSurfaceVariant,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant),
+                            isMarquee: true,
                           ),
                         ],
                       ),

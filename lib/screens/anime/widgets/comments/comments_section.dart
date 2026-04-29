@@ -1,16 +1,20 @@
-import 'package:anymex/database/model/comment.dart';
+import 'package:anymex/database/comments/model/comment.dart';
+import 'package:anymex/database/data_keys/keys.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/screens/anime/widgets/comments/controller/comment_preloader.dart';
 import 'package:anymex/screens/anime/widgets/comments/controller/comments_controller.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/common/policy_sheet.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hive/hive.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:anymex/controllers/service_handler/service_handler.dart';
+import 'package:anymex/screens/profile/profile_page.dart';
+import 'package:anymex/screens/profile/user_profile_page.dart';
 
 class CommentSection extends StatefulWidget {
   final Media media;
@@ -75,9 +79,7 @@ class _CommentSectionState extends State<CommentSection> {
   }
 
   void _handlePostComment() {
-    final box = Hive.box('themeData');
-    final bool hasAccepted =
-        box.get('hasAcceptedCommentRules', defaultValue: false);
+    final bool hasAccepted = General.hasAcceptedCommentRules.get<bool>(false);
 
     if (hasAccepted) {
       controller.addComment();
@@ -106,7 +108,7 @@ class _CommentSectionState extends State<CommentSection> {
           ),
           FilledButton(
             onPressed: () {
-              Hive.box('themeData').put('hasAcceptedCommentRules', true);
+              General.hasAcceptedCommentRules.set(true);
               Navigator.pop(context);
 
               controller.addComment();
@@ -532,14 +534,10 @@ class _CommentSectionState extends State<CommentSection> {
       ),
       child: ClipOval(
         child: controller.profile.avatar?.isNotEmpty == true
-            ? Image.network(
-                controller.profile.avatar!,
+            ? AnymeXImage(
+                imageUrl: controller.profile.avatar!,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.person_rounded,
-                  color: colorScheme.onSurfaceVariant,
-                  size: 20,
-                ),
+                radius: 0,
               )
             : Icon(
                 Icons.person_rounded,
@@ -765,40 +763,48 @@ class _CommentSectionState extends State<CommentSection> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colorScheme.surfaceContainer,
-            border: Border.all(
-              color: colorScheme.outline.opaque(0.1, iReallyMeanIt: true),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.shadow.opaque(0.08, iReallyMeanIt: true),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
+        GestureDetector(
+          onTap: () {
+            final currentUserId =
+                Get.find<ServiceHandler>().profileData.value.id;
+            if (comment.userId == currentUserId) {
+              navigate(() => const ProfilePage());
+            } else {
+              navigate(() =>
+                  UserProfilePage(userId: int.tryParse(comment.userId) ?? 0));
+            }
+          },
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colorScheme.surfaceContainer,
+              border: Border.all(
+                color: colorScheme.outline.opaque(0.1, iReallyMeanIt: true),
+                width: 1,
               ),
-            ],
-          ),
-          child: ClipOval(
-            child: comment.avatarUrl?.isNotEmpty == true
-                ? Image.network(
-                    comment.avatarUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Icon(
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.shadow.opaque(0.08, iReallyMeanIt: true),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: comment.avatarUrl?.isNotEmpty == true
+                  ? AnymeXImage(
+                      imageUrl: comment.avatarUrl!,
+                      fit: BoxFit.cover,
+                      radius: 0,
+                    )
+                  : Icon(
                       Icons.person_rounded,
                       color: colorScheme.onSurfaceVariant,
                       size: 18,
                     ),
-                  )
-                : Icon(
-                    Icons.person_rounded,
-                    color: colorScheme.onSurfaceVariant,
-                    size: 18,
-                  ),
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -809,15 +815,14 @@ class _CommentSectionState extends State<CommentSection> {
               Row(
                 children: [
                   Flexible(
-                    child: Text(
-                      comment.username,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onSurface,
-                        fontSize: 15,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: AnymexText(
+                      text: comment.username,
+                      variant: TextVariant.bold,
+                      color: colorScheme.onSurface,
+                      size: 15,
                       maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      isMarquee: true,
                     ),
                   ),
                   if (comment.tag.isNotEmpty) ...[

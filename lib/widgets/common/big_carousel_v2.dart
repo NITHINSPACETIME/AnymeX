@@ -4,16 +4,15 @@ import 'dart:ui';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/screens/anime/details_page.dart';
 import 'package:anymex/screens/manga/details_page.dart';
-import 'package:anymex/utils/color_extractor.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
-import 'package:anymex/widgets/common/big_carousel.dart';
+import 'package:anymex/widgets/common/carousel/carousel_types.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
-import 'package:anymex/widgets/header.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:anymex/widgets/common/marquee_text.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -45,63 +44,68 @@ class _BigCarouselV2State extends State<BigCarouselV2> {
 
     final colorScheme = Get.theme.colorScheme;
 
-    return Stack(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            children: [
-              CarouselSlider.builder(
-                itemCount: newData.length,
-                itemBuilder: (context, index, realIndex) {
-                  final item = newData[index];
-                  final isActive = index == activeIndex;
-                  return _CarouselCard(
-                    media: item,
-                    isActive: isActive,
-                    carouselType: widget.carouselType,
-                    onTap: () => navigateToDetailsPage(item),
-                    onShowDescription: () =>
-                        _showDescriptionSheet(context, item),
-                  );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.trackpad,
+              },
+            ),
+            child: CarouselSlider.builder(
+              itemCount: newData.length,
+              disableGesture: false,
+              itemBuilder: (context, index, realIndex) {
+                final item = newData[index];
+                final isActive = index == activeIndex;
+                return _CarouselCard(
+                  media: item,
+                  isActive: isActive,
+                  carouselType: widget.carouselType,
+                  onTap: () => navigateToDetailsPage(item),
+                  onShowDescription: () => _showDescriptionSheet(context, item),
+                );
+              },
+              options: CarouselOptions(
+                height: 400,
+                viewportFraction: 0.65,
+                enlargeCenterPage: true,
+                enlargeFactor: 0.2,
+                initialPage: 0,
+                enableInfiniteScroll: true,
+                autoPlay: !kDebugMode,
+                autoPlayInterval: const Duration(seconds: 6),
+                autoPlayAnimationDuration: const Duration(milliseconds: 800),
+                autoPlayCurve: Curves.fastOutSlowIn,
+                scrollDirection: Axis.horizontal,
+                onPageChanged: (index, reason) {
+                  setState(() {
+                    activeIndex = index;
+                  });
                 },
-                options: CarouselOptions(
-                  height: 400,
-                  viewportFraction: 0.65,
-                  enlargeCenterPage: true,
-                  enlargeFactor: 0.2,
-                  initialPage: 0,
-                  enableInfiniteScroll: true,
-                  autoPlay: !kDebugMode,
-                  autoPlayInterval: const Duration(seconds: 6),
-                  autoPlayAnimationDuration: const Duration(milliseconds: 800),
-                  autoPlayCurve: Curves.fastOutSlowIn,
-                  scrollDirection: Axis.horizontal,
-                  onPageChanged: (index, reason) {
-                    setState(() {
-                      activeIndex = index;
-                    });
-                  },
-                ),
-                carouselController: controller,
               ),
-              const SizedBox(height: 20),
-              AnimatedSmoothIndicator(
-                activeIndex: activeIndex,
-                count: newData.length,
-                effect: ScrollingDotsEffect(
-                  activeDotColor: colorScheme.primary,
-                  dotColor: colorScheme.onSurface.opaque(0.1),
-                  dotHeight: 6,
-                  dotWidth: 6,
-                  activeDotScale: 1.5,
-                  spacing: 8,
-                ),
-              ),
-            ],
+              carouselController: controller,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 20),
+          AnimatedSmoothIndicator(
+            activeIndex: activeIndex,
+            count: newData.length,
+            effect: ScrollingDotsEffect(
+              activeDotColor: colorScheme.primary,
+              dotColor: colorScheme.onSurface.opaque(0.1),
+              dotHeight: 6,
+              dotWidth: 6,
+              activeDotScale: 1.5,
+              spacing: 8,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -124,101 +128,239 @@ class _BigCarouselV2State extends State<BigCarouselV2> {
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: Stack(
+              child: Column(
                 children: [
-                  ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: CachedNetworkImage(
-                              imageUrl: media.cover ?? '',
-                              height: 100,
-                              width: 70,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  media.title,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: (media.genres ?? []).map((genre) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: colorScheme.primary.opaque(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        genre,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: colorScheme.primary,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                )
-                              ],
-                            ),
-                          )
-                        ],
+                  Container(
+                    margin: const EdgeInsets.only(top: 16, bottom: 8),
+                    child: Container(
+                      width: 48,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurface.opaque(0.2),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(height: 24),
-                      Divider(color: colorScheme.onSurface.opaque(0.1)),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Synopsis",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      AnymexText(
-                        text: media.description,
-                        size: 14,
-                        color: colorScheme.onSurface.opaque(0.8),
-                        stripHtml: true,
-                        maxLines: 999,
-                      ),
-                      const SizedBox(height: 40),
-                    ],
+                    ),
                   ),
-                  Positioned(
-                    top: 10,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: colorScheme.onSurface.opaque(0.2),
-                          borderRadius: BorderRadius.circular(2),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: colorScheme.outline.opaque(0.08),
+                          width: 1,
                         ),
                       ),
                     ),
-                  )
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Description',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.5,
+                                    color: colorScheme.onSurface,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              height: 2,
+                              width: 32,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    colorScheme.primary,
+                                    colorScheme.primary.opaque(0.3),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: colorScheme.outline.opaque(0.1),
+                            ),
+                          ),
+                          child: IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              color: colorScheme.onSurface.opaque(0.7),
+                              size: 20,
+                            ),
+                            splashRadius: 20,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: const BoxDecoration(
+                        borderRadius:
+                            BorderRadius.vertical(bottom: Radius.circular(24)),
+                      ),
+                      child: Scrollbar(
+                        controller: scrollController,
+                        thumbVisibility: true,
+                        radius: const Radius.circular(8),
+                        thickness: 6,
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface.opaque(0.3),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: colorScheme.outline.opaque(0.06),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (media.description.isEmpty) ...[
+                                  Center(
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.description_outlined,
+                                          size: 48,
+                                          color:
+                                              colorScheme.onSurface.opaque(0.3),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          'No Description Available',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium
+                                              ?.copyWith(
+                                                color: colorScheme.onSurface
+                                                    .opaque(0.6),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Description not provided for this item',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: colorScheme.onSurface
+                                                    .opaque(0.4),
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ] else ...[
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: AnymeXImage(
+                                          imageUrl: media.cover ?? '',
+                                          height: 100,
+                                          width: 70,
+                                          fit: BoxFit.cover,
+                                          radius: 0,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              media.title,
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: colorScheme.onSurface,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: (media.genres ?? [])
+                                                  .map((genre) {
+                                                return Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: colorScheme.primary
+                                                        .opaque(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                  ),
+                                                  child: Text(
+                                                    genre,
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color:
+                                                          colorScheme.primary,
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            )
+                                          ],
+                                        ),
+                                      )
+                                    ],
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Divider(
+                                      color: colorScheme.onSurface.opaque(0.1)),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    "Synopsis",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  AnymexText(
+                                    text: media.description,
+                                    size: 14,
+                                    color: colorScheme.onSurface.opaque(0.8),
+                                    stripHtml: true,
+                                    maxLines: 999,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -238,7 +380,7 @@ class _BigCarouselV2State extends State<BigCarouselV2> {
   }
 }
 
-class _CarouselCard extends StatefulWidget {
+class _CarouselCard extends StatelessWidget {
   final Media media;
   final bool isActive;
   final CarouselType carouselType;
@@ -254,58 +396,12 @@ class _CarouselCard extends StatefulWidget {
   });
 
   @override
-  State<_CarouselCard> createState() => _CarouselCardState();
-}
-
-class _CarouselCardState extends State<_CarouselCard> {
-  ColorScheme? _colorScheme;
-  bool _isExtracted = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _extractColorLazily();
-  }
-
-  void _extractColorLazily() async {
-    if (_isExtracted) return;
-    _isExtracted = true;
-
-    final cachedColor = ImageColorExtractor.getCachedColor(widget.media.poster);
-    if (cachedColor != null) {
-      if (mounted) {
-        setState(() {
-          _colorScheme = ColorScheme.fromSeed(
-            seedColor: cachedColor,
-            brightness: Get.theme.brightness,
-          );
-        });
-      }
-      return;
-    }
-
-    final color = await ImageColorExtractor.extractColor(
-      widget.media.poster,
-      targetSize: const Size(50, 50),
-    );
-
-    if (color != null && mounted) {
-      setState(() {
-        _colorScheme = ColorScheme.fromSeed(
-          seedColor: color,
-          brightness: Get.theme.brightness,
-        );
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final tag = '${widget.media.id}-carousel-${Random().nextInt(100)}';
-    final colorScheme = _colorScheme ?? Get.theme.colorScheme;
+    final tag = '${media.id}-carousel-${Random().nextInt(100)}';
+    final colorScheme = Get.theme.colorScheme;
 
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
@@ -326,8 +422,10 @@ class _CarouselCardState extends State<_CarouselCard> {
                 tag: tag,
                 child: AnymeXImage(
                   imageUrl: getResponsiveValue(context,
-                      mobileValue: widget.media.largePoster,
-                      desktopValue: widget.media.cover),
+                      mobileValue: media.largePoster != "?"
+                          ? media.largePoster
+                          : media.cover,
+                      desktopValue: media.cover),
                   fit: BoxFit.cover,
                 ),
               ),
@@ -355,7 +453,7 @@ class _CarouselCardState extends State<_CarouselCard> {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              widget.carouselType == CarouselType.manga
+                              carouselType == CarouselType.manga
                                   ? Iconsax.book_1
                                   : Iconsax.play5,
                               color: colorScheme.onPrimary,
@@ -367,8 +465,8 @@ class _CarouselCardState extends State<_CarouselCard> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  widget.media.title,
+                                MarqueeText(
+                                  media.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -379,13 +477,15 @@ class _CarouselCardState extends State<_CarouselCard> {
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Row(
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Icon(Iconsax.star5,
                                         size: 12, color: colorScheme.primary),
-                                    const SizedBox(width: 4),
                                     Text(
-                                      widget.media.rating.toString(),
+                                      media.rating.toString(),
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
@@ -393,18 +493,15 @@ class _CarouselCardState extends State<_CarouselCard> {
                                             colorScheme.onSurface.opaque(0.7),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
                                     _buildDot(colorScheme),
-                                    const SizedBox(width: 8),
                                     Icon(
-                                        widget.media.mediaType == ItemType.manga
+                                        media.mediaType == ItemType.manga
                                             ? Iconsax.book
                                             : Icons.play_circle_rounded,
                                         size: 12,
                                         color: colorScheme.primary),
-                                    const SizedBox(width: 4),
                                     Text(
-                                      widget.media.totalEpisodes,
+                                      media.totalEpisodes,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -413,14 +510,11 @@ class _CarouselCardState extends State<_CarouselCard> {
                                             colorScheme.onSurface.opaque(0.5),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
                                     _buildDot(colorScheme),
-                                    const SizedBox(width: 8),
                                     Icon(Icons.info_rounded,
                                         size: 12, color: colorScheme.primary),
-                                    const SizedBox(width: 4),
                                     GestureDetector(
-                                      onTap: widget.onShowDescription,
+                                      onTap: onShowDescription,
                                       child: Container(
                                         color: Colors.transparent,
                                         child: Text(

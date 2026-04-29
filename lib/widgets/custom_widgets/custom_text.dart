@@ -1,6 +1,6 @@
+import 'package:anymex/widgets/common/marquee_text.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 
 enum TextVariant { regular, semiBold, bold }
 
@@ -18,6 +18,7 @@ class AnymexText extends StatelessWidget {
   final bool autoResize;
   final double? minFontSize;
   final double? stepGranularity;
+  final bool isMarquee;
 
   const AnymexText({
     super.key,
@@ -33,7 +34,101 @@ class AnymexText extends StatelessWidget {
     this.autoResize = false,
     this.minFontSize = 10,
     this.stepGranularity = 1,
+    this.isMarquee = false,
   });
+
+  const AnymexText.regular({
+    Key? key,
+    required String text,
+    Color? color,
+    double? size,
+    TextAlign? textAlign,
+    TextOverflow? overflow = TextOverflow.ellipsis,
+    int? maxLines = 2,
+    FontStyle fontStyle = FontStyle.normal,
+    bool stripHtml = false,
+    bool autoResize = false,
+    double? minFontSize = 10,
+    double? stepGranularity = 1,
+    bool isMarquee = false,
+  }) : this(
+          key: key,
+          text: text,
+          variant: TextVariant.regular,
+          color: color,
+          size: size,
+          textAlign: textAlign,
+          overflow: overflow,
+          maxLines: maxLines,
+          fontStyle: fontStyle,
+          stripHtml: stripHtml,
+          autoResize: autoResize,
+          minFontSize: minFontSize,
+          stepGranularity: stepGranularity,
+          isMarquee: isMarquee,
+        );
+
+  const AnymexText.semiBold({
+    Key? key,
+    required String text,
+    Color? color,
+    double? size,
+    TextAlign? textAlign,
+    TextOverflow? overflow = TextOverflow.ellipsis,
+    int? maxLines = 2,
+    FontStyle fontStyle = FontStyle.normal,
+    bool stripHtml = false,
+    bool autoResize = false,
+    double? minFontSize = 10,
+    double? stepGranularity = 1,
+    bool isMarquee = false,
+  }) : this(
+          key: key,
+          text: text,
+          variant: TextVariant.semiBold,
+          color: color,
+          size: size,
+          textAlign: textAlign,
+          overflow: overflow,
+          maxLines: maxLines,
+          fontStyle: fontStyle,
+          stripHtml: stripHtml,
+          autoResize: autoResize,
+          minFontSize: minFontSize,
+          stepGranularity: stepGranularity,
+          isMarquee: isMarquee,
+        );
+
+  const AnymexText.bold({
+    Key? key,
+    required String text,
+    Color? color,
+    double? size,
+    TextAlign? textAlign,
+    TextOverflow? overflow = TextOverflow.ellipsis,
+    int? maxLines = 2,
+    FontStyle fontStyle = FontStyle.normal,
+    bool stripHtml = false,
+    bool autoResize = false,
+    double? minFontSize = 10,
+    double? stepGranularity = 1,
+    bool isMarquee = false,
+  }) : this(
+          key: key,
+          text: text,
+          variant: TextVariant.bold,
+          color: color,
+          size: size,
+          textAlign: textAlign,
+          overflow: overflow,
+          maxLines: maxLines,
+          fontStyle: fontStyle,
+          stripHtml: stripHtml,
+          autoResize: autoResize,
+          minFontSize: minFontSize,
+          stepGranularity: stepGranularity,
+          isMarquee: isMarquee,
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -52,12 +147,24 @@ class AnymexText extends StatelessWidget {
       fontStyle: fontStyle,
     );
 
+    final effectiveMaxLines = isMarquee ? 1 : maxLines;
+
+    if (isMarquee) {
+      return MarqueeText(
+        processedText,
+        style: textStyle,
+        textAlign: textAlign,
+        overflow: overflow,
+        maxLines: effectiveMaxLines,
+      );
+    }
+
     if (!autoResize) {
       return Text(
         processedText,
         textAlign: textAlign,
         overflow: overflow,
-        maxLines: maxLines,
+        maxLines: effectiveMaxLines,
         style: textStyle,
       );
     }
@@ -65,7 +172,7 @@ class AnymexText extends StatelessWidget {
     return AutoSizeText(
       processedText,
       textAlign: textAlign,
-      maxLines: maxLines,
+      maxLines: effectiveMaxLines,
       minFontSize: minFontSize ?? 10,
       stepGranularity: stepGranularity ?? 1,
       overflow: overflow,

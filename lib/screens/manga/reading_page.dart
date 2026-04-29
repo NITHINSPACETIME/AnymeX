@@ -1,14 +1,11 @@
+import 'package:anymex/database/isar_models/chapter.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/screens/manga/controller/reader_controller.dart';
-import 'package:anymex/screens/manga/widgets/reader/bottom_controls.dart';
 import 'package:anymex/screens/manga/widgets/reader/reader_view.dart';
-import 'package:anymex/screens/manga/widgets/reader/top_controls.dart';
+import 'package:anymex/screens/manga/widgets/reader/themes/setup/themed_controls.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-
-import 'package:anymex/models/Offline/Hive/chapter.dart';
 
 class ReadingPage extends StatefulWidget {
   final Media anilistData;
@@ -57,20 +54,30 @@ class _ReadingPageState extends State<ReadingPage> {
       final currentPage = controller.currentPageIndex.value;
       final totalPages = controller.pageList.length;
 
-      switch (event.logicalKey) {
-        case LogicalKeyboardKey.arrowRight:
-        case LogicalKeyboardKey.arrowDown:
-          if (currentPage < totalPages) {
-            controller.navigateToPage(currentPage);
-          }
-          break;
+      final isReversed = controller.readingDirection.value.reversed;
+      bool isNext = false;
+      bool isPrev = false;
 
-        case LogicalKeyboardKey.arrowLeft:
-        case LogicalKeyboardKey.arrowUp:
-          if (currentPage > 1) {
-            controller.navigateToPage(currentPage - 2);
-          }
-          break;
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        isNext = true;
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        isPrev = true;
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+        isNext = !isReversed;
+        isPrev = isReversed;
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+        isNext = isReversed;
+        isPrev = !isReversed;
+      }
+
+      if (isNext) {
+        if (currentPage < totalPages) {
+          controller.navigateToPage(currentPage);
+        }
+      } else if (isPrev) {
+        if (currentPage > 1) {
+          controller.navigateToPage(currentPage - 2);
+        }
       }
     }
   }
@@ -91,8 +98,9 @@ class _ReadingPageState extends State<ReadingPage> {
             fit: StackFit.expand,
             children: [
               ReaderView(controller: controller),
-              ReaderTopControls(controller: controller),
-              ReaderBottomControls(controller: controller),
+              const ThemedReaderTopControls(),
+              const ThemedReaderBottomControls(),
+              const ThemedReaderCenterControls(),
             ],
           ),
         ),

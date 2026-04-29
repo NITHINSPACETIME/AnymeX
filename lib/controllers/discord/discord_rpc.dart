@@ -3,13 +3,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:anymex/controllers/settings/settings.dart';
+import 'package:anymex/database/isar_models/chapter.dart';
+import 'package:anymex/database/isar_models/episode.dart';
+import 'package:anymex/database/kv_helper.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/models/Offline/Hive/chapter.dart';
-import 'package:anymex/models/Offline/Hive/episode.dart';
 import 'package:anymex/utils/extension_utils.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_discord_rpc_fork/flutter_discord_rpc.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
@@ -104,6 +105,7 @@ class DiscordRPCController extends GetxController {
   static const String _apiBaseUrl = 'https://discord.com/api/v10';
 
   FlutterDiscordRPC? _discordRPC;
+  StreamSubscription<bool>? _desktopConnectionSub;
 
   WebSocket? _gatewaySocket;
   Timer? _heartbeatTimer;
@@ -226,20 +228,42 @@ class DiscordRPCController extends GetxController {
     try {
       await FlutterDiscordRPC.initialize(_applicationId);
       _discordRPC = FlutterDiscordRPC.instance;
+      _desktopConnectionSub?.cancel();
+      _desktopConnectionSub =
+          _discordRPC!.isConnectedStream.listen((connected) {
+        _isConnected.value = connected;
+      });
 
       await _discordRPC!.connect(autoRetry: true);
-      _isConnected.value = true;
+      _isConnected.value = _discordRPC!.isConnected;
+      if (!_isConnected.value) {
+        print('Discord RPC connect requested (Desktop), but not connected yet');
+        return;
+      }
       print('Connected to Discord RPC (Desktop)');
 
-      updateBrowsingPresence(
-        activity: 'Browsing Stuff',
-        details: 'Idle',
+      await updateBrowsingPresence(
+        activity: kDebugMode ? 'Working on the App' : 'Browsing Stuff',
+        details: kDebugMode ? "Coding" : 'Idle',
       );
     } catch (e) {
       print('Failed to connect to Discord RPC: $e');
       _isConnected.value = false;
       snackBar('Failed to connect to Discord RPC');
     }
+  }
+
+  bool _canUseDesktopRpc(String action) {
+    if (isMobile) {
+      return true;
+    }
+    final connected = _discordRPC != null && _discordRPC!.isConnected;
+    if (!connected) {
+      _isConnected.value = false;
+      print('Skipping $action: Discord RPC is not connected (Desktop)');
+      return false;
+    }
+    return true;
   }
 
   Future<void> _connectMobileGateway() async {
@@ -285,8 +309,8 @@ class DiscordRPCController extends GetxController {
           _isConnected.value = true;
           print('Discord Gateway Ready (Mobile)');
           updateBrowsingPresence(
-            activity: 'Browsing Stuff',
-            details: 'Idle',
+            activity: kDebugMode ? 'Working on the App' : 'Browsing Stuff',
+            details: kDebugMode ? "Coding" : 'Idle',
           );
         }
         break;
@@ -392,7 +416,7 @@ class DiscordRPCController extends GetxController {
     required Episode episode,
     required String totalEpisodes,
   }) async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value || !_canUseDesktopRpc('updateAnimePresence')) {
       print('Discord not connected');
       return;
     }
@@ -491,7 +515,8 @@ class DiscordRPCController extends GetxController {
     required Episode episode,
     required String totalEpisodes,
   }) async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value ||
+        !_canUseDesktopRpc('updateAnimePresencePaused')) {
       print('Discord not connected');
       return;
     }
@@ -580,7 +605,7 @@ class DiscordRPCController extends GetxController {
     required String totalChapters,
     int currentPage = 1,
   }) async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value || !_canUseDesktopRpc('updateMangaPresence')) {
       print('Discord not connected');
       return;
     }
@@ -658,7 +683,7 @@ class DiscordRPCController extends GetxController {
   }
 
   Future<void> updateMediaPresence({required Media media}) async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value || !_canUseDesktopRpc('updateMediaPresence')) {
       print('Discord not connected');
       return;
     }
@@ -749,7 +774,7 @@ class DiscordRPCController extends GetxController {
     String? activity,
     String? details,
   }) async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value || !_canUseDesktopRpc('updateBrowsingPresence')) {
       print('Discord not connected');
       return;
     }
@@ -806,7 +831,7 @@ class DiscordRPCController extends GetxController {
   }
 
   Future<void> clearPresence() async {
-    if (!_isConnected.value) {
+    if (!_isConnected.value || !_canUseDesktopRpc('clearPresence')) {
       print('Discord not connected');
       return;
     }
@@ -849,6 +874,8 @@ class DiscordRPCController extends GetxController {
       _gatewaySocket = null;
       _sequenceNumber = null;
     } else {
+      await _desktopConnectionSub?.cancel();
+      _desktopConnectionSub = null;
       if (_discordRPC != null) {
         try {
           await _discordRPC!.disconnect();

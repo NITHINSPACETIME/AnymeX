@@ -1,10 +1,18 @@
 // ignore_for_file: prefer_const_constructors
 
 import 'package:anymex/controllers/service_handler/service_handler.dart';
+import 'package:anymex/controllers/services/anilist/anilist_data.dart';
 import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/screens/anime/details_page.dart';
+import 'package:anymex/screens/manga/details_page.dart';
+import 'package:anymex/screens/anime/studio_details_page.dart';
 import 'package:anymex/screens/anime/themes/anime_theme_view.dart';
 import 'package:anymex/screens/anime/widgets/watch_order_page.dart';
+import 'package:anymex/models/mangaupdates/news_item.dart';
+import 'package:anymex/screens/news/news_page.dart';
+import 'package:anymex/screens/anime/widgets/social_section.dart';
+import 'package:anymex/utils/anime_adaptation_util.dart';
+import 'package:anymex/models/Anilist/anilist_media_user.dart';
 
 import 'package:anymex/screens/home_page.dart';
 import 'package:anymex/screens/search/search_view.dart';
@@ -12,17 +20,35 @@ import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 class AnimeStats extends StatelessWidget {
   final Media data;
   final String countdown;
+  final List<TrackedMedia>? friendsWatching;
+  final String? totalEpisodes;
+  final ServicesType? serviceType;
+
   const AnimeStats({
     super.key,
     required this.data,
     required this.countdown,
+    this.friendsWatching,
+    this.totalEpisodes,
+    this.serviceType,
   });
+
+  bool get _hasSeasonsContent {
+    final list = data.relations
+        ?.where((e) =>
+            e.relationType == 'SEQUEL' || e.relationType == 'PREQUEL')
+        .take(2)
+        .toList() ??
+        [];
+    return list.isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,11 +76,12 @@ class AnimeStats extends StatelessWidget {
             _buildCountdownCard(context),
             const SizedBox(height: 16),
           ],
-          _buildSectionContainer(
+          _buildCollapsibleSectionContainer(
             context,
             icon: Icons.analytics_outlined,
             title: "Statistics",
             child: _buildStatsGrid(context),
+            isInitiallyExpanded: true,
           ),
           const SizedBox(height: 16),
           Row(
@@ -77,7 +104,7 @@ class AnimeStats extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _buildInfoCard(
+          _buildCollapsibleInfoCard(
             context,
             icon: Icons.description_outlined,
             title: "Synopsis",
@@ -88,6 +115,7 @@ class AnimeStats extends StatelessWidget {
               maxLines: 100,
               stripHtml: true,
             ),
+            isInitiallyExpanded: true,
           ),
           const SizedBox(height: 16),
           _buildSectionContainer(
@@ -128,16 +156,27 @@ class AnimeStats extends StatelessWidget {
                           ));
                     }
                   },
-                  backgroundImage: covers[index].cover!,
+                  backgroundImage: (index < covers.length) ? covers[index].cover! : data.cover ?? data.poster,
                 );
               },
             ),
           ),
-          const SizedBox(height: 16),
-          _buildSeasons(context),
-          const SizedBox(height: 16),
-          _buildOthersSection(context),
-          const SizedBox(height: 16),
+          if (friendsWatching != null && friendsWatching!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            SocialSection(
+              friends: friendsWatching!,
+              totalEpisodes: totalEpisodes,
+            ),
+          ],
+          if (_hasSeasonsContent) ...[
+            const SizedBox(height: 16),
+            _buildSeasons(context),
+          ],
+          if (serviceType != null &&
+              (serviceType != ServicesType.simkl)) ...[
+            const SizedBox(height: 16),
+            _buildOthersSection(context),
+          ],
         ],
       ),
     );
@@ -145,7 +184,8 @@ class AnimeStats extends StatelessWidget {
 
   Widget _buildOthersSection(BuildContext context) {
     final colorScheme = context.colors;
-    return _buildSectionContainer(context,
+    return _buildCollapsibleSectionContainer(
+        context,
         icon: Icons.more,
         title: "Others",
         child: Column(
@@ -209,9 +249,76 @@ class AnimeStats extends StatelessWidget {
                 ),
               ),
             ),
-            10.height(),
-
-
+            const SizedBox(height: 10),
+             FutureBuilder<List<NewsItem>>(
+              future: MangaAnimeUtil.getAnimeNews(data),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
+                
+                return Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        navigate(() => NewsPage(media: data, news: snapshot.data!));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest.opaque(0.4),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: colorScheme.outline.opaque(0.2),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.opaque(0.15, iReallyMeanIt: true),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.newspaper_rounded,
+                                size: 22,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AnymexText(
+                                    text: "Recent News",
+                                    variant: TextVariant.bold,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  AnymexText(
+                                    text: "Read latest updates about this anime",
+                                    variant: TextVariant.regular,
+                                    size: 13,
+                                    color: colorScheme.onSurface.opaque(0.6),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 20,
+                              color: colorScheme.primary.opaque(0.7),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                );
+              }
+            ),
             GestureDetector(
               onTap: () {
                 navigate(() => WatchOrderPage(title: data.title));
@@ -306,21 +413,35 @@ class AnimeStats extends StatelessWidget {
                                   mobileSize: 60, desktopSize: 80),
                               buttonText: relation.relationType,
                               onPressed: () {
+                                final isMangaRelation = relation.type == 'MANGA';
+                                final media = Media(
+                                  id: relation.id.toString(),
+                                  title: relation.title,
+                                  poster: relation.poster,
+                                  cover: relation.cover,
+                                  type: relation.type,
+                                  mediaType: isMangaRelation
+                                      ? ItemType.manga
+                                      : ItemType.anime,
+                                  serviceType: ServicesType.anilist,
+                                );
+
                                 navigate(
-                                  () => AnimeDetailsPage(
-                                      media: Media(
-                                          id: relation.id.toString(),
-                                          title: relation.title,
-                                          poster: relation.poster,
-                                          serviceType: ServicesType.anilist),
-                                      tag: relation.id.toString()),
+                                  () => isMangaRelation
+                                      ? MangaDetailsPage(
+                                          media: media,
+                                          tag: relation.id.toString(),
+                                        )
+                                      : AnimeDetailsPage(
+                                          media: media,
+                                          tag: relation.id.toString(),
+                                        ),
                                 );
                               },
                               backgroundImage: relation.cover.isNotEmpty
                                   ? relation.cover
                                   : relation.poster,
-                            ),
-                          ))
+                          )))
                       .toList(),
                 ),
               ],
@@ -482,6 +603,83 @@ class AnimeStats extends StatelessWidget {
     );
   }
 
+  Widget _buildCollapsibleInfoCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required Widget content,
+    bool isInitiallyExpanded = false,
+  }) {
+    final colorScheme = context.colors;
+    
+    return _CollapsibleBox(
+      isInitiallyExpanded: isInitiallyExpanded,
+      header: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.opaque(0.15, iReallyMeanIt: true),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          AnymexText(
+            text: title,
+            variant: TextVariant.bold,
+            size: 16,
+          ),
+        ],
+      ),
+      content: content,
+      colorScheme: colorScheme,
+    );
+  }
+
+  Widget _buildCollapsibleSectionContainer(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required Widget child,
+    bool isInitiallyExpanded = true,
+  }) {
+    final colorScheme = context.colors;
+
+    return _CollapsibleBox(
+      isInitiallyExpanded: isInitiallyExpanded,
+      header: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.opaque(0.15, iReallyMeanIt: true),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              size: 24,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          AnymexText(
+            text: title,
+            variant: TextVariant.bold,
+            size: 20,
+          ),
+        ],
+      ),
+      content: child,
+      colorScheme: colorScheme,
+      padding: const EdgeInsets.all(24),
+    );
+  }
+
   Widget _buildStatsGrid(BuildContext context) {
     final colorScheme = context.colors;
     final stats = [
@@ -530,7 +728,20 @@ class AnimeStats extends StatelessWidget {
         {
           'label': 'Studio',
           'value': data.studios?.first ?? '',
-          'icon': Icons.business_outlined
+          'icon': Icons.business_outlined,
+          'onTap': () async {
+            final studioName = data.studios?.first ?? '';
+            if (studioName.isEmpty) return;
+            final studioId = await AnilistData.fetchStudioIdByName(studioName);
+            if (studioId != null) {
+              if (!context.mounted) return;
+              showStudioDetailsSheet(
+                context,
+                studioId,
+                studioName,
+              );
+            }
+          },
         },
     ];
 
@@ -547,50 +758,154 @@ class AnimeStats extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final stat = stats[index];
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: colorScheme.surface.opaque(0.4),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: colorScheme.primary.opaque(0.1),
-              width: 1,
+        final onTap = stat['onTap'] as Function?;
+        return GestureDetector(
+          onTap: onTap != null ? () => onTap() : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: colorScheme.surface.opaque(0.4),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: colorScheme.primary.opaque(0.1),
+                width: 1,
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    stat['icon'] as IconData,
-                    size: 16,
-                    color: colorScheme.primary.opaque(0.7),
-                  ),
-                  const SizedBox(width: 6),
-                  AnymexText(
-                    text: stat['label'].toString(),
-                    variant: TextVariant.regular,
-                    size: 11,
-                    color: colorScheme.onSurface.opaque(0.6),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              AnymexText(
-                text: stat['value'].toString(),
-                variant: TextVariant.bold,
-                size: 15,
-                color: colorScheme.primary,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      stat['icon'] as IconData,
+                      size: 16,
+                      color: colorScheme.primary.opaque(0.7),
+                    ),
+                    const SizedBox(width: 6),
+                    AnymexText(
+                      text: stat['label'].toString(),
+                      variant: TextVariant.regular,
+                      size: 11,
+                      color: colorScheme.onSurface.opaque(0.6),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                AnymexText(
+                  text: stat['value'].toString(),
+                  variant: TextVariant.bold,
+                  size: 15,
+                  color: colorScheme.primary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class _CollapsibleBox extends StatefulWidget {
+  final Widget header;
+  final Widget content;
+  final bool isInitiallyExpanded;
+  final ColorScheme colorScheme;
+  final EdgeInsetsGeometry padding;
+
+  const _CollapsibleBox({
+    required this.header,
+    required this.content,
+    required this.colorScheme,
+    this.isInitiallyExpanded = false,
+    this.padding = const EdgeInsets.all(20),
+  });
+
+  @override
+  State<_CollapsibleBox> createState() => _CollapsibleBoxState();
+}
+
+class _CollapsibleBoxState extends State<_CollapsibleBox> with SingleTickerProviderStateMixin {
+  late bool isExpanded;
+  late AnimationController _controller;
+  late Animation<double> _iconTurns;
+
+  @override
+  void initState() {
+    super.initState();
+    isExpanded = widget.isInitiallyExpanded;
+    _controller = AnimationController(duration: const Duration(milliseconds: 300), vsync: this);
+    _iconTurns = Tween<double>(begin: 0.0, end: 0.5).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    if (isExpanded) {
+      _controller.value = 1.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    setState(() {
+      isExpanded = !isExpanded;
+      if (isExpanded) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _handleTap,
+      child: Container(
+        padding: widget.padding,
+        decoration: BoxDecoration(
+          color: widget.colorScheme.surfaceContainerHighest.opaque(0.35),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: widget.colorScheme.outline.opaque(0.15, iReallyMeanIt: true),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: widget.header),
+                RotationTransition(
+                  turns: _iconTurns,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: widget.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox(width: double.infinity),
+              secondChild: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  widget.content,
+                ],
+              ),
+              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 300),
+              sizeCurve: Curves.easeInOut,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

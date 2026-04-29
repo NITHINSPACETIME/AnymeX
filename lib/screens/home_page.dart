@@ -1,24 +1,32 @@
+import 'dart:math' as math;
+
 import 'package:anymex/controllers/cacher/cache_controller.dart';
 import 'package:anymex/controllers/offline/offline_storage_controller.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
 import 'package:anymex/controllers/settings/methods.dart';
 import 'package:anymex/controllers/settings/settings.dart';
+import 'package:anymex/controllers/source/source_controller.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/screens/library/widgets/history_model.dart';
-import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/anime/continue_watching_cards.dart';
+import 'package:anymex/widgets/common/reusable_carousel.dart';
 import 'package:anymex/widgets/common/scroll_aware_app_bar.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_button.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/custom_widgets/custom_textspan.dart';
 import 'package:anymex/widgets/header.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/history/tap_history_cards.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:get/get.dart';
 
 class HomePage extends StatefulWidget {
@@ -35,14 +43,162 @@ class _HomePageState extends State<HomePage> {
   final ValueNotifier<bool> _isAppBarVisibleExternally =
       ValueNotifier<bool>(true);
 
+  Widget _buildRecentlyOpenedSection(CacheController cacheController) {
+    final data = cacheController.getStoredAnime();
+    if (data.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: SizedBox(
+        height: 100,
+        child: RepaintBoundary(
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: data.length,
+            itemBuilder: (context, i) =>
+                RecentlyOpenedAnimeCard(media: data[i]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContinueWatchingSection(
+      OfflineStorageController offlineStorageController) {
+    return StreamBuilder<List<OfflineMedia>>(
+      stream: offlineStorageController.watchAnimeLibrary(),
+      builder: (context, snapshot) {
+        final historyData = (snapshot.data ?? const <OfflineMedia>[])
+            .where((e) => e.currentEpisode?.currentTrack != null)
+            .toList()
+          ..sort((a, b) => (b.currentEpisode?.lastWatchedTime ?? 0)
+              .compareTo(a.currentEpisode?.lastWatchedTime ?? 0));
+        final visibleHistory = historyData.take(20).toList(growable: false);
+
+        if (visibleHistory.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 20.0),
+              child: Text(
+                "Local History",
+                style: TextStyle(
+                  fontFamily: "Poppins-SemiBold",
+                  fontSize: 17,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 228,
+              child: RepaintBoundary(
+                child: GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: visibleHistory.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 1,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 0,
+                    mainAxisExtent: 300,
+                  ),
+                  itemBuilder: (context, i) => ContinueWatchingCard(
+                    media: HistoryModel.fromOfflineMedia(
+                        visibleHistory[i], ItemType.anime),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildHomeWidgets({
+    required BuildContext context,
+    required ServiceHandler serviceHandler,
+    required CacheController cacheController,
+    required OfflineStorageController offlineStorageController,
+    required Settings settings,
+  }) {
+    final baseWidgets = serviceHandler.homeWidgets(context);
+    final hasRecentSection = cacheController.getStoredAnime().isNotEmpty;
+    final shouldShowContinueSection = settings.showContinueWatchingCard;
+
+    if (!hasRecentSection && !shouldShowContinueSection) {
+      return List<Widget>.from(baseWidgets);
+    }
+    final localSections = <Widget>[
+      const SizedBox(height: 12),
+      if (hasRecentSection) _buildRecentlyOpenedSection(cacheController),
+      const SizedBox(height: 12),
+      if (shouldShowContinueSection)
+        _buildContinueWatchingSection(offlineStorageController),
+    ];
+
+    int insertionIndex;
+    if (serviceHandler.serviceType.value == ServicesType.simkl) {
+      insertionIndex = serviceHandler.isLoggedIn.value ? 3 : 2;
+    } else if (!serviceHandler.isLoggedIn.value ||
+        serviceHandler.serviceType.value == ServicesType.extensions) {
+      insertionIndex = 0;
+    } else {
+      insertionIndex = 2;
+    }
+    insertionIndex = math.min(insertionIndex, baseWidgets.length);
+
+    return [
+      ...baseWidgets.take(insertionIndex),
+      ...localSections,
+      ...baseWidgets.skip(insertionIndex),
+    ];
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Get.find<Settings>().checkForUpdates(context);
-      Get.find<Settings>().showWelcomeDialog(context);
-    });
     _scrollController = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showDiscordDialog();
+    });
+  }
+
+  void _showDiscordDialog() {
+    if (General.hasJoinedNewDiscord.get(false)) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: AnymexDialog(
+            title: 'Important Announcement',
+            showCancelButton: false,
+            confirmText: 'Join Discord',
+            onConfirm: () async {
+              General.hasJoinedNewDiscord.set(true);
+              final url = Uri.parse('https://discord.gg/C9abCZjC8K');
+              await launchUrl(url, mode: LaunchMode.externalApplication);
+            },
+            contentWidget: const Text(
+              'Our previous Discord server with over 2,100 members was unfortunately taken down due to copyright infringement.\n\n'
+              'We are trying to rebuild! Please join our new Discord server to help us gain our wonderful community back. '
+              'You must join to continue using the app.',
+              style: TextStyle(fontFamily: 'Poppins', fontSize: 14),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   ScrollController get scrollController => _scrollController;
@@ -57,7 +213,10 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final cacheController = Get.find<CacheController>();
+    final offlineStorageController = Get.find<OfflineStorageController>();
     final serviceHandler = Get.find<ServiceHandler>();
+    final settings = Get.find<Settings>();
+    final sourceController = Get.find<SourceController>();
     final isDesktop = MediaQuery.of(context).size.width > 600;
     final statusBarHeight = MediaQuery.of(context).padding.top;
     const appBarHeight = kToolbarHeight + 20;
@@ -69,10 +228,7 @@ class _HomePageState extends State<HomePage> {
     final TextAlign textAlignment =
         isMobile ? TextAlign.center : TextAlign.left;
 
-    final historyData = Get.find<OfflineStorageController>()
-        .animeLibrary
-        .where((e) => e.currentEpisode?.currentTrack != null)
-        .toList();
+    final List<dynamic> novelData = [];
 
     return RefreshIndicator(
       onRefresh: () {
@@ -144,160 +300,23 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 30),
                       Obx(() {
-                        final children = List<Widget>.from(
-                            serviceHandler.homeWidgets(context));
-                        final data = cacheController.getStoredAnime();
-                        if (serviceHandler.isLoggedIn.value) {
-                          children.insert(
-                            2,
-                            Column(
-                              children: [
-                                if (data.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8.0),
-                                    child: SizedBox(
-                                      height: 100,
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: cacheController
-                                            .getStoredAnime()
-                                            .length,
-                                        itemBuilder: (context, i) {
-                                          final media = cacheController
-                                              .getStoredAnime()[i];
-                                          return RecentlyOpenedAnimeCard(
-                                              media: media);
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                if (historyData.isNotEmpty) ...[
-                                  10.height(),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(left: 20.0),
-                                        child: Text(
-                                          "Continue Watching (Literally)",
-                                          style: TextStyle(
-                                            fontFamily: "Poppins-SemiBold",
-                                            fontSize: 17,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                          ),
-                                        ),
-                                      ),
-                                      10.height(),
-                                      SizedBox(
-                                        height: 228,
-                                        child: GridView.builder(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 15),
-                                          scrollDirection: Axis.horizontal,
-                                          itemCount: historyData.length,
-                                          gridDelegate:
-                                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 1,
-                                                  crossAxisSpacing: 10,
-                                                  mainAxisSpacing: 0,
-                                                  mainAxisExtent: 300),
-                                          itemBuilder: (context, i) {
-                                            final historyModel =
-                                                HistoryModel.fromOfflineMedia(
-                                                    historyData[i],
-                                                    ItemType.anime);
-                                            return ContinueWatchingCard(
-                                                media: historyModel);
-                                          },
-                                        ),
-                                      )
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        } else {
-                          children.insert(
-                            0,
-                            Column(
-                              children: [
-                                if (data.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8.0),
-                                    child: SizedBox(
-                                      height: 100,
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: cacheController
-                                            .getStoredAnime()
-                                            .length,
-                                        itemBuilder: (context, i) {
-                                          final media = cacheController
-                                              .getStoredAnime()[i];
-                                          return RecentlyOpenedAnimeCard(
-                                              media: media);
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                if (historyData.isNotEmpty) ...[
-                                  10.height(),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(left: 20.0),
-                                        child: Text(
-                                          "Continue Watching (Literally)",
-                                          style: TextStyle(
-                                            fontFamily: "Poppins-SemiBold",
-                                            fontSize: 17,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                          ),
-                                        ),
-                                      ),
-                                      10.height(),
-                                      SizedBox(
-                                        height: 228,
-                                        child: GridView.builder(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 15),
-                                          scrollDirection: Axis.horizontal,
-                                          itemCount: historyData.length,
-                                          gridDelegate:
-                                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 1,
-                                                  crossAxisSpacing: 10,
-                                                  mainAxisSpacing: 0,
-                                                  mainAxisExtent: 300),
-                                          itemBuilder: (context, i) {
-                                            final historyModel =
-                                                HistoryModel.fromOfflineMedia(
-                                                    historyData[i],
-                                                    ItemType.anime);
-                                            return ContinueWatchingCard(
-                                                media: historyModel);
-                                          },
-                                        ),
-                                      )
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        }
+                        cacheController.currentPool.length;
+                        final children = _buildHomeWidgets(
+                          context: context,
+                          serviceHandler: serviceHandler,
+                          cacheController: cacheController,
+                          offlineStorageController: offlineStorageController,
+                          settings: settings,
+                        );
                         return Column(children: children);
                       }),
+                      if (novelData.isNotEmpty)
+                        ReusableCarousel(
+                          title: "Recommended Novels",
+                          data: novelData,
+                          type: ItemType.novel,
+                          source: sourceController.activeNovelSource.value,
+                        ),
                     ],
                   ),
                   if (!isDesktop)
@@ -342,6 +361,7 @@ class _HomePageState extends State<HomePage> {
 class ImageButton extends StatelessWidget {
   final String buttonText;
   final VoidCallback onPressed;
+  final VoidCallback? onLongPress;
   final String backgroundImage;
   final double width;
   final double height;
@@ -353,6 +373,7 @@ class ImageButton extends StatelessWidget {
     super.key,
     required this.buttonText,
     required this.onPressed,
+    this.onLongPress,
     required this.backgroundImage,
     this.width = 160,
     this.height = 60,
@@ -388,11 +409,12 @@ class ImageButton extends StatelessWidget {
             child: ClipRRect(
               borderRadius:
                   BorderRadius.circular(borderRadius.multiplyRadius()),
-              child: CachedNetworkImage(
+              child: AnymeXImage(
                 height: height,
                 width: width,
                 imageUrl: backgroundImage,
                 fit: BoxFit.cover,
+                radius: 0,
               ),
             ),
           ),
@@ -408,6 +430,7 @@ class ImageButton extends StatelessWidget {
           Positioned.fill(
             child: AnymexButton(
               onTap: onPressed,
+              onLongPress: onLongPress,
               padding: EdgeInsets.zero,
               color: Colors.transparent,
               border: BorderSide(

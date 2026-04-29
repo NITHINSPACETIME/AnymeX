@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     
     <!-- New permissions for downloading and installing APKs -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
@@ -94,6 +99,69 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="aniyomi" android:host="add-repo" />
         </intent-filter>  
+
+        <intent-filter android:label="Add Repo">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="cloudstreamrepo" />
+        </intent-filter>  
+
+        <intent-filter android:label="Add Repo">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="sora" />
+        </intent-filter>  
+
+        <intent-filter android:label="Add Player Theme">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="anymex" android:host="theme" />
+        </intent-filter>
+
+        <intent-filter android:label="Open AniList Link">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+            <data android:scheme="anymex" />
+            <data android:host="anilist.co" />
+            <data android:host="www.anilist.co" />
+            <data android:host="anilist" />
+            <data android:pathPrefix="/anime/" />
+            <data android:pathPrefix="/manga/" />
+        </intent-filter>
+
+        <intent-filter android:label="Open MAL Link">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+            <data android:scheme="anymex" />
+            <data android:host="myanimelist.net" />
+            <data android:host="www.myanimelist.net" />
+            <data android:host="myanimelist" />
+            <data android:host="mal" />
+            <data android:pathPrefix="/anime/" />
+            <data android:pathPrefix="/manga/" />
+        </intent-filter>
+
+        <intent-filter android:label="Open Simkl Link">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+            <data android:scheme="anymex" />
+            <data android:host="simkl.com" />
+            <data android:host="www.simkl.com" />
+            <data android:host="simkl" />
+            <data android:pathPrefix="/anime/" />
+            <data android:pathPrefix="/tv/" />
+            <data android:pathPrefix="/movie/" />
+            <data android:pathPrefix="/movies/" />
+        </intent-filter>
         
         </activity>
 
@@ -104,6 +172,12 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="anymex" android:host="callback"/>
+            </intent-filter>
+            <intent-filter android:label="Login Gist">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="anymex" android:host="oauth" android:pathPrefix="/github"/>
             </intent-filter>
         </activity>
 
@@ -121,6 +195,11 @@
         <meta-data android:name="flutterEmbedding" android:value="2"/>
         <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
         <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false"/>
+
+        <service 
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
     </application>
 
     <queries>

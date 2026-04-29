@@ -1,15 +1,17 @@
 import 'package:anymex/controllers/settings/methods.dart';
 import 'package:anymex/controllers/settings/settings.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/widgets/header.dart';
+import 'package:anymex/utils/theme_extensions.dart';
+import 'package:anymex/widgets/anime/visuals/visuals_popup.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/helper/tv_wrapper.dart';
+import 'package:anymex/widgets/non_widgets/snackbar.dart';
 import 'package:blur/blur.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:kenburns_nullsafety/kenburns_nullsafety.dart';
-import 'package:anymex/widgets/anime/visuals/visuals_popup.dart';
-import 'package:anymex/widgets/non_widgets/snackbar.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 
 class GradientPoster extends StatelessWidget {
   const GradientPoster({
@@ -86,7 +88,7 @@ class GradientPoster extends StatelessWidget {
             children: [
               GestureDetector(
                 onTap: () {
-                  snackBar("come-on man, long press it !!!", context: context);
+                  snackBar("come-on man, long press it !!!");
                 },
                 onLongPress: () {
                   Get.to(
@@ -140,9 +142,20 @@ class GradientPoster extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: MediaQuery.of(context).size.width / 2,
-                    child: Text(data?.title ?? 'Loading...',
-                        style: const TextStyle(
-                            fontFamily: "Poppins-Bold", fontSize: 16)),
+                    child: GestureDetector(
+                      onLongPress: () {
+                        final title = data?.title ?? 'Loading...';
+                        Clipboard.setData(ClipboardData(text: title));
+                        snackBar('Title copied');
+                      },
+                      child: AnymexText(
+                          text: data?.title ?? 'Loading...',
+                          variant: TextVariant.bold,
+                          size: 16,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          isMarquee: true),
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10.0),
@@ -155,6 +168,27 @@ class GradientPoster extends StatelessWidget {
                 ],
               )
             ],
+          ),
+        ),
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 20,
+          child: AnymexOnTap(
+            onTap: () {
+              Navigator.of(context, rootNavigator: true)
+                  .popUntil((route) => route.isFirst);
+            },
+            margin: 0,
+            child: IconButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.surfaceContainer,
+              ),
+              onPressed: () {
+                Navigator.of(context, rootNavigator: true)
+                    .popUntil((route) => route.isFirst);
+              },
+              icon: const Icon(Icons.home),
+            ),
           ),
         ),
         Positioned(

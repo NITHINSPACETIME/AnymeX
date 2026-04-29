@@ -1,4 +1,3 @@
-
 import 'package:anymex/controllers/settings/settings.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
 import 'package:anymex/models/Media/media.dart';
@@ -7,17 +6,18 @@ import 'package:anymex/screens/anime/details_page.dart';
 import 'package:anymex/screens/manga/details_page.dart';
 import 'package:anymex/screens/novel/details/details_view.dart';
 import 'package:anymex/utils/function.dart';
+import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/animation/slide_scale.dart';
 import 'package:anymex/widgets/common/cards/base_card.dart';
 import 'package:anymex/widgets/common/cards/card_gate.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_progress.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/helper/tv_wrapper.dart';
-import 'package:anymex/widgets/custom_widgets/custom_text.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
+import 'package:anymex/widgets/media_items/media_peek_popup.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
-import 'package:anymex/widgets/custom_widgets/anymex_progress.dart';
 import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
@@ -72,26 +72,22 @@ class _ReusableCarouselState extends State<ReusableCarousel> {
     );
   }
 
-  // Computed properties
   bool get _isEmptyOrOffline =>
       widget.data.isEmpty && widget.variant == DataVariant.offline;
 
-  // Header title section
   Widget _buildHeaderTitle() {
     return Padding(
       padding: const EdgeInsets.only(left: 20.0),
-      child: Text(
-        widget.title,
-        style: TextStyle(
-          fontFamily: "Poppins-SemiBold",
-          fontSize: 17,
-          color: context.colors.primary,
-        ),
+      child: AnymexText(
+        text: widget.title,
+        variant: TextVariant.semiBold,
+        size: 17,
+        color: context.colors.primary,
+        isMarquee: true,
       ),
     );
   }
 
-  // Offline placeholder display
   Widget _buildOfflinePlaceholder() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +118,6 @@ class _ReusableCarouselState extends State<ReusableCarousel> {
     );
   }
 
-  // Main carousel list builder
   Widget _buildCarouselList() {
     final List<CarouselData> processedData =
         convertData(widget.data, variant: widget.variant);
@@ -146,14 +141,27 @@ class _ReusableCarouselState extends State<ReusableCarousel> {
     final tag = '${itemData.hashCode}-${itemData.id}';
 
     return Obx(() {
+      final card = settingsController.enableAnimation
+          ? SlideAndScaleAnimation(child: _buildCard(itemData, tag))
+          : _buildCard(itemData, tag);
+
       final child = AnymexOnTap(
         onTap: () => _navigateToDetailsPage(itemData, tag),
-        child: settingsController.enableAnimation
-            ? SlideAndScaleAnimation(child: _buildCard(itemData, tag))
-            : _buildCard(itemData, tag),
+        child: GestureDetector(
+          onLongPress: () => _showPeekPopup(context, itemData, tag),
+          child: card,
+        ),
       );
       return child;
     });
+  }
+
+  void _showPeekPopup(BuildContext context, CarouselData itemData, String tag) {
+    final bool isMediaManga = _determineIfManga(itemData);
+    final ItemType mediaType = isMediaManga ? ItemType.manga : ItemType.anime;
+    final media = Media.fromCarouselData(itemData, mediaType);
+    if (media.userStatus != null && media.userStatus!.isNotEmpty) return;
+    MediaPeekPopup.show(context, media, mediaType, tag);
   }
 
   MediaCardGate _buildCard(CarouselData itemData, String tag) {
@@ -174,19 +182,30 @@ class _ReusableCarouselState extends State<ReusableCarousel> {
     final ItemType mediaType = isMediaManga ? ItemType.manga : ItemType.anime;
     final media = Media.fromCarouselData(itemData, mediaType);
 
-    final Widget page = isMediaManga
-        ? MangaDetailsPage(
-            media: media,
-            tag: tag,
-          )
-        : widget.type == ItemType.anime
-            ? AnimeDetailsPage(
-                media: media,
-                tag: tag,
-              )
-            : NovelDetailsPage(media: media, tag: tag, source: widget.source!);
+    void onTapHandler() {
+      if (mediaType == ItemType.novel) {
+        final source =
+            widget.source ?? sourceController.installedNovelExtensions.first;
+        navigate(() => NovelDetailsPage(
+              media: media,
+              tag: media.title,
+              source: source,
+            ));
+      } else if (mediaType == ItemType.manga) {
+        navigate(() => MangaDetailsPage(
+              media: media,
+              tag: media.title,
+            ));
+      } else {
+        navigate(() => AnimeDetailsPage(
+              media: media,
+              tag: media.title,
+            ));
+      }
+    }
+
     _setActiveSource(controller, itemData);
-    navigate(() => page);
+    onTapHandler();
   }
 
   bool _determineIfManga(CarouselData itemData) {
@@ -203,7 +222,7 @@ class _ReusableCarouselState extends State<ReusableCarousel> {
       if (widget.type == ItemType.manga) {
         controller.getMangaExtensionByName(itemData.source!);
       } else {
-        controller.getExtensionByName(itemData.source!);
+        controller.getExtensionByValue(itemData.source!);
       }
     }
   }

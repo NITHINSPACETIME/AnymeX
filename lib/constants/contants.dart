@@ -25,7 +25,6 @@ List<String> colorKeys = colorMap.keys.toList();
 
 Map<String, BoxFit> resizeModes = {
   for (var e in BoxFit.values)
-    // exclude the `none` option, add "(default)" to contain and " /Stretch" to fill
     if (e != BoxFit.none)
       capitalize(e.name) +
           (e == BoxFit.contain ? ' (default)' : '') +
@@ -51,7 +50,7 @@ String capitalize(String word) {
 const maxMobileWidth = 600;
 
 final Map<String, Color> colorOptions = {
-  'Default': Colors.transparent,
+  'None': Colors.transparent,
   'White': Colors.white,
   'Black': Colors.black,
   'Red': Colors.red,

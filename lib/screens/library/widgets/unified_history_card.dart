@@ -5,6 +5,7 @@ import 'package:anymex/screens/library/widgets/history_model.dart';
 import 'package:anymex/widgets/custom_widgets/custom_expansion_tile.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/header.dart';
+import 'package:anymex/widgets/custom_widgets/anymex_image.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/helper/tv_wrapper.dart';
 import 'package:blur/blur.dart';
@@ -114,6 +115,7 @@ class UnifiedHistoryCard extends StatelessWidget {
                                 mobileValue: 1, desktopValue: 2),
                             variant: TextVariant.bold,
                             overflow: TextOverflow.ellipsis,
+                            isMarquee: true,
                           ),
                           const SizedBox(height: 4),
                           if (media.title != null &&
@@ -125,6 +127,7 @@ class UnifiedHistoryCard extends StatelessWidget {
                               variant: TextVariant.regular,
                               color: colorScheme.onSurface.opaque(0.7),
                               overflow: TextOverflow.ellipsis,
+                              isMarquee: true,
                             ),
                           const Spacer(),
                           Column(
@@ -374,6 +377,7 @@ class UnifiedHistoryCardV2 extends StatelessWidget {
                             mobileValue: 1, desktopValue: 2),
                         variant: TextVariant.bold,
                         overflow: TextOverflow.ellipsis,
+                        isMarquee: true,
                       ),
                       const SizedBox(height: 4),
                       if (media.title != null &&
@@ -385,6 +389,7 @@ class UnifiedHistoryCardV2 extends StatelessWidget {
                           variant: TextVariant.regular,
                           color: colorScheme.onSurface.opaque(0.7),
                           overflow: TextOverflow.ellipsis,
+                          isMarquee: true,
                         ),
                       const Spacer(),
                       // Progress indicator

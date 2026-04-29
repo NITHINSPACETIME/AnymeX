@@ -1,20 +1,25 @@
 import 'dart:io';
 
 import 'package:anymex/controllers/service_handler/service_handler.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
-import 'package:anymex/models/Media/media.dart';
+import 'package:anymex/database/isar_models/chapter.dart';
+import 'package:anymex/database/isar_models/episode.dart';
+import 'package:anymex/database/isar_models/offline_media.dart';
 import 'package:anymex/models/Anilist/anilist_media_user.dart';
+import 'package:anymex/models/Media/media.dart';
 import 'package:anymex/models/Media/relation.dart';
-import 'package:anymex/models/Offline/Hive/chapter.dart';
-import 'package:anymex/models/Offline/Hive/episode.dart';
-import 'package:anymex/models/Offline/Hive/offline_media.dart';
+import 'package:anymex/models/mangaupdates/news_item.dart';
 import 'package:anymex/models/models_convertor/carousel/carousel_data.dart';
 import 'package:anymex/models/models_convertor/carousel_mapper.dart';
+import 'package:anymex/utils/string_extensions.dart';
+import 'package:anymex/utils/theme_extensions.dart';
+import 'package:anymex/widgets/custom_widgets/custom_text.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:anymex/utils/theme_extensions.dart';
 import 'package:get/get.dart';
+import 'package:html/parser.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 extension StringExtensions on String {
   String get getUrlWithoutDomain {
@@ -181,10 +186,12 @@ Episode DEpisodeToEpisode(DEpisode chapter) {
   return Episode(
     number: chapter.episodeNumber,
     link: chapter.url,
+    sortKeys: chapter.sortMap?.keys.toList(),
+    sortVals: chapter.sortMap?.values.toList(),
     title: chapter.name,
-    thumbnail: null,
-    desc: null,
-    filler: false,
+    thumbnail: chapter.thumbnail,
+    desc: chapter.description,
+    filler: chapter.filler,
   );
 }
 
@@ -213,13 +220,20 @@ String dateFormatHour(String timestamp) {
 
 List<Chapter> DEpisodeToChapter(List<DEpisode> chapters, String title) {
   return chapters.map((e) {
+    print(e.toJson());
     return Chapter(
-        title: e.name,
-        link: e.url,
-        scanlator: e.scanlator,
-        number:
-            ChapterRecognition.parseChapterNumber(title, e.name!).toDouble(),
-        releaseDate: calcTime(e.dateUpload ?? ''));
+      title: e.name,
+      link: e.url,
+      scanlator: e.scanlator,
+
+      /// so previously i was using this, now trying to extract from episode itself
+      // number:
+      //     ChapterRecognition.parseChapterNumber(title, e.name!).toDouble(),
+      number: e.episodeNumber.toDouble(),
+      releaseDate: e.dateUpload != null && e.dateUpload!.isNotEmpty
+          ? calcTime(e.dateUpload!)
+          : DateFormat('dd-MM-yyyy').format(DateTime.now()),
+    );
   }).toList();
 }
 
@@ -295,6 +309,58 @@ List<List<Chapter>> chunkChapter(List<Chapter> chapters, int chunkSize) {
   ];
 }
 
+int findChunkIndexFromProgress(
+  int userProgress,
+  List<List<Episode>> chunks, {
+  bool isManga = false,
+}) {
+  if (chunks.isEmpty || chunks.length <= 1) return 0;
+  if (userProgress <= 0) return 1;
+
+  for (int i = 1; i < chunks.length; i++) {
+    final chunk = chunks[i];
+    if (chunk.isEmpty) continue;
+
+    final firstEp =
+        double.tryParse(chunk.first.number.toString())?.toInt() ?? 0;
+    final lastEp = double.tryParse(chunk.last.number.toString())?.toInt() ?? 0;
+
+    final minEp = firstEp < lastEp ? firstEp : lastEp;
+    final maxEp = firstEp > lastEp ? firstEp : lastEp;
+
+    if (userProgress >= minEp && userProgress <= maxEp) {
+      return i;
+    }
+  }
+
+  return chunks.length - 1;
+}
+
+int findChapterChunkIndexFromProgress(
+  int userProgress,
+  List<List<Chapter>> chunks,
+) {
+  if (chunks.isEmpty || chunks.length <= 1) return 0;
+  if (userProgress <= 0) return 1;
+
+  for (int i = 1; i < chunks.length; i++) {
+    final chunk = chunks[i];
+    if (chunk.isEmpty) continue;
+
+    final firstChapter = chunk.first.number?.toInt() ?? 0;
+    final lastChapter = chunk.last.number?.toInt() ?? 0;
+
+    final minCh = firstChapter < lastChapter ? firstChapter : lastChapter;
+    final maxCh = firstChapter > lastChapter ? firstChapter : lastChapter;
+
+    if (userProgress >= minCh && userProgress <= maxCh) {
+      return i;
+    }
+  }
+
+  return chunks.length - 1;
+}
+
 enum DataVariant {
   regular,
   recommendation,
@@ -302,7 +368,8 @@ enum DataVariant {
   anilist,
   extension,
   offline,
-  library
+  library,
+  underrated
 }
 
 List<CarouselData> convertData(List<dynamic> data,
@@ -347,7 +414,7 @@ String formatTimeAgo(int millisecondsSinceEpoch) {
 
 Media convertOfflineToMedia(OfflineMedia offlineMedia) {
   return Media(
-      id: offlineMedia.id ?? '0',
+      id: offlineMedia.mediaId ?? '0',
       romajiTitle: offlineMedia.jname ?? '',
       title: offlineMedia.english ?? offlineMedia.name ?? '',
       description: offlineMedia.description ?? '',
@@ -410,6 +477,16 @@ List<TrackedMedia> filterListByStatus(
           .where((anime) =>
               anime.watchingStatus == 'COMPLETED' && anime.format == 'SPECIAL')
           .toList();
+    case 'COMPLETED ONA':
+      return animeList
+          .where((anime) =>
+              anime.watchingStatus == 'COMPLETED' && anime.format == 'ONA')
+          .toList();
+    case 'COMPLETED TV SHORT':
+      return animeList
+          .where((anime) =>
+              anime.watchingStatus == 'COMPLETED' && anime.format == 'TV_SHORT')
+          .toList();
     case 'PAUSED':
       return animeList
           .where((anime) => anime.watchingStatus == 'PAUSED')
@@ -425,6 +502,25 @@ List<TrackedMedia> filterListByStatus(
     case 'REWATCHING':
       return animeList
           .where((anime) => anime.watchingStatus == "REPEATING")
+          .toList();
+    case 'REREADING':
+      return animeList
+          .where((anime) => anime.watchingStatus == "REPEATING")
+          .toList();
+    case 'COMPLETED MANGA':
+      return animeList
+          .where((anime) =>
+              anime.watchingStatus == 'COMPLETED' && anime.format == 'MANGA')
+          .toList();
+    case 'COMPLETED NOVEL':
+      return animeList
+          .where((anime) =>
+              anime.watchingStatus == 'COMPLETED' && anime.format == 'NOVEL')
+          .toList();
+    case 'COMPLETED ONE SHOT':
+      return animeList
+          .where((anime) =>
+              anime.watchingStatus == 'COMPLETED' && anime.format == 'ONE_SHOT')
           .toList();
 
     case 'CURRENTLY WATCHING':
@@ -490,7 +586,11 @@ List<TrackedMedia> filterListByLabel(
 }
 
 int getResponsiveCrossAxisVal(double screenWidth, {int itemWidth = 150}) {
-  return (screenWidth / itemWidth).floor().clamp(1, 12);
+  if (!screenWidth.isFinite || itemWidth <= 0) {
+    return 1;
+  }
+  final count = (screenWidth / itemWidth).floor();
+  return count.clamp(1, 12);
 }
 
 Future<bool> isTv() async {
@@ -501,8 +601,39 @@ Future<bool> isTv() async {
   return isTV;
 }
 
-void navigate(dynamic page) {
-  Navigator.push(Get.context!, MaterialPageRoute(builder: (c) => page()));
+Future<void> navigate(dynamic page) async {
+  await Navigator.push(Get.context!, MaterialPageRoute(builder: (c) => page()));
+}
+
+Future<void> navigateWithSlide(dynamic page) async {
+  await Navigator.push(
+    Get.context!,
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page(),
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final offsetAnim = Tween<Offset>(
+          begin: const Offset(0, 0.08),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        ));
+        final fadeAnim = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeIn,
+        );
+        return FadeTransition(
+          opacity: fadeAnim,
+          child: SlideTransition(
+            position: offsetAnim,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
 }
 
 extension SizedBoxExt on num {
@@ -515,9 +646,60 @@ extension SizedBoxExt on num {
   }
 }
 
+extension RemoveDuplicates<T extends Media> on List<T> {
+  List<T> removeDupes() {
+    final seenIds = <String>{};
+    return where((media) {
+      final isDuplicate = seenIds.contains(media.id);
+      seenIds.add(media.id);
+      return !isDuplicate;
+    }).toList();
+  }
+}
+
 String getRandomTag({String? addition}) {
   if (addition != null) {
     return '$addition-${DateTime.now().millisecond}';
   }
   return DateTime.now().millisecond.toString();
+}
+
+Widget buildNewsSection(BuildContext context, List<NewsItem> news) {
+  if (news.isEmpty) return const SizedBox.shrink();
+  final colorScheme = context.colors;
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: news.take(5).map((item) {
+      final decodedTitle = parse(item.title).body?.text ?? item.title;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: InkWell(
+          onTap: () => launchUrl(Uri.parse(item.url)),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surface.opaque(0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.outline.opaque(0.1)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AnymexText(
+                    text: decodedTitle,
+                    size: 13,
+                    maxLines: 2,
+                    variant: TextVariant.semiBold,
+                  ),
+                ),
+                Icon(Icons.open_in_new, size: 16, color: colorScheme.primary),
+              ],
+            ),
+          ),
+        ),
+      );
+    }).toList(),
+  );
 }

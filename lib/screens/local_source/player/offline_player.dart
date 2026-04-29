@@ -1,15 +1,16 @@
 import 'package:anymex/controllers/service_handler/service_handler.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/database/isar_models/episode.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/models/Offline/Hive/episode.dart';
 import 'package:anymex/screens/anime/watch/controller/player_controller.dart';
-import 'package:anymex/screens/anime/watch/controls/bottom_controls.dart';
-import 'package:anymex/screens/anime/watch/controls/center_controls.dart';
-import 'package:anymex/screens/anime/watch/controls/top_controls.dart';
+import 'package:anymex/screens/anime/watch/controls/themes/setup/themed_controls.dart';
 import 'package:anymex/screens/anime/watch/controls/widgets/double_tap_seek.dart';
 import 'package:anymex/screens/anime/watch/controls/widgets/episodes_pane.dart';
 import 'package:anymex/screens/anime/watch/controls/widgets/overlay.dart';
+import 'package:anymex/screens/anime/watch/controls/widgets/source_popup.dart';
 import 'package:anymex/screens/anime/watch/controls/widgets/subtitle_text.dart';
-import 'package:anymex/screens/anime/watch/subtitles/subtitle_view.dart';
+import 'package:anymex/screens/anime/watch/controls/widgets/sync_subs_popup.dart';
+import 'package:anymex/screens/anime/watch/controls/widgets/tracks_popup.dart';
 import 'package:anymex/screens/anime/widgets/media_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -56,8 +57,7 @@ class _OfflineWatchPageState extends State<OfflineWatchPage> {
 
   @override
   void dispose() {
-    controller.delete();
-    Get.delete<PlayerController>(force: true);
+    Get.delete<PlayerController>();
     super.dispose();
   }
 
@@ -68,30 +68,24 @@ class _OfflineWatchPageState extends State<OfflineWatchPage> {
       children: [
         Obx(() {
           return controller.videoWidget;
-          // return Video(
-          //     controller: controller.playerController,
-          //     fit: controller.videoFit.value,
-          //     resumeUponEnteringForegroundMode: true,
-          //     subtitleViewConfiguration:
-          //         const SubtitleViewConfiguration(visible: false),
-          //     controls: (state) => const SizedBox.shrink());
         }),
         PlayerOverlay(controller: controller),
-        SubtitleText(controller: controller),
+        if (!PlayerKeys.useLibass.get<bool>(false))
+          SubtitleText(controller: controller),
         DoubleTapSeekWidget(
           controller: controller,
         ),
         const Align(
           alignment: Alignment.center,
-          child: CenterControls(),
+          child: ThemedCenterControls(),
         ),
         const Align(
           alignment: Alignment.topCenter,
-          child: TopControls(),
+          child: ThemedTopControls(),
         ),
         const Align(
           alignment: Alignment.bottomCenter,
-          child: BottomControls(),
+          child: ThemedBottomControls(),
         ),
         MediaIndicatorBuilder(
           isVolumeIndicator: false,
@@ -106,7 +100,7 @@ class _OfflineWatchPageState extends State<OfflineWatchPage> {
           top: 0,
           bottom: 0,
           left: 0,
-          child: SubtitleSearchBottomSheet(controller: controller),
+          child: TracksPopup(controller: controller),
         ),
         Positioned(
           right: 0,

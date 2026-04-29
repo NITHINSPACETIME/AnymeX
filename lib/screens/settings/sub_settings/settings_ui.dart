@@ -1,4 +1,5 @@
 import 'package:anymex/controllers/settings/settings.dart';
+import 'package:anymex/screens/settings/widgets/carousel_style_selector.dart';
 import 'package:anymex/screens/settings/widgets/card_selector.dart';
 import 'package:anymex/screens/settings/widgets/history_card_selector.dart';
 import 'package:anymex/utils/function.dart';
@@ -85,8 +86,8 @@ class _SettingsUiState extends State<SettingsUi> {
                                     }),
                                 CustomSwitchTile(
                                     icon: Icons.colorize,
-                                    title: "Transculent Nav",
-                                    description: "Enable transculent tab bar",
+                                    title: "Translucent Nav",
+                                    description: "Enable translucent tab bar",
                                     switchValue: settings.transculentBar,
                                     onChanged: (val) {
                                       settings.transculentBar = val;
@@ -103,6 +104,13 @@ class _SettingsUiState extends State<SettingsUi> {
                                   icon: Iconsax.card5,
                                   title: "History Card Style",
                                   description: "Change history card style",
+                                ),
+                                CustomTile(
+                                  onTap: () =>
+                                      showCarouselStyleSelector(context),
+                                  icon: Icons.view_carousel_rounded,
+                                  title: "Carousel Style",
+                                  description: "Change big carousel style",
                                 ),
                                 10.height(),
                               ],

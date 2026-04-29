@@ -14,7 +14,7 @@ android {
     // ndkVersion = flutter.ndkVersion
     ndkVersion = "27.0.12077973"
 
-     dependenciesInfo {
+    dependenciesInfo {
         includeInApk = false
         includeInBundle = false
     }
@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ryan.anymex"
-        minSdk = 23
+        minSdkVersion = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -40,8 +40,9 @@ android {
         jniLibs {
             useLegacyPackaging true
         }
+        // exclude 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
     }
-    
+
     signingConfigs {
         release {
             def keystoreProperties = new Properties()
@@ -59,6 +60,14 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

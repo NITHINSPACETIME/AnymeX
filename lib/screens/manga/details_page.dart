@@ -4,13 +4,14 @@ import 'package:anymex/controllers/offline/offline_storage_controller.dart';
 import 'package:anymex/controllers/service_handler/params.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
 import 'package:anymex/controllers/services/anilist/anilist_auth.dart';
+import 'package:anymex/controllers/services/anilist/anilist_data.dart';
 import 'package:anymex/controllers/settings/methods.dart';
-import 'package:anymex/controllers/settings/settings.dart';
 import 'package:anymex/controllers/source/source_controller.dart';
 import 'package:anymex/controllers/source/source_mapper.dart';
+import 'package:anymex/database/data_keys/keys.dart';
+import 'package:anymex/database/isar_models/chapter.dart';
 import 'package:anymex/models/Anilist/anilist_media_user.dart';
 import 'package:anymex/models/Media/media.dart';
-import 'package:anymex/models/Offline/Hive/chapter.dart';
 import 'package:anymex/screens/anime/widgets/comments/comments_section.dart';
 import 'package:anymex/screens/anime/widgets/comments/controller/comment_preloader.dart';
 import 'package:anymex/screens/anime/widgets/custom_list_dialog.dart';
@@ -21,6 +22,7 @@ import 'package:anymex/screens/manga/widgets/chapter_section.dart';
 import 'package:anymex/screens/manga/widgets/manga_stats.dart';
 import 'package:anymex/utils/function.dart';
 import 'package:anymex/utils/logger.dart';
+import 'package:anymex/utils/media_share.dart';
 import 'package:anymex/utils/string_extensions.dart';
 import 'package:anymex/utils/theme_extensions.dart';
 import 'package:anymex/widgets/anime/gradient_image.dart';
@@ -33,7 +35,7 @@ import 'package:anymex/widgets/custom_widgets/custom_text.dart';
 import 'package:anymex/widgets/custom_widgets/custom_textspan.dart';
 import 'package:anymex/widgets/helper/platform_builder.dart';
 import 'package:anymex/widgets/non_widgets/snackbar.dart';
-import 'package:dartotsu_extension_bridge/dartotsu_extension_bridge.dart';
+import 'package:anymex_extension_runtime_bridge/anymex_extension_runtime_bridge.dart';
 import 'package:expandable_page_view/expandable_page_view.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -41,11 +43,18 @@ import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:iconly/iconly.dart';
 import 'package:iconsax/iconsax.dart';
+import 'package:anymex/controllers/services/community_service.dart';
+import 'package:anymex/widgets/non_widgets/recommend_button.dart';
 
 class MangaDetailsPage extends StatefulWidget {
   final Media media;
   final String tag;
-  const MangaDetailsPage({super.key, required this.media, required this.tag});
+  final int initialTabIndex;
+  const MangaDetailsPage(
+      {super.key,
+      required this.media,
+      required this.tag,
+      this.initialTabIndex = 0});
 
   @override
   State<MangaDetailsPage> createState() => _MangaDetailsPageState();
@@ -76,7 +85,7 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
   RxString mangaStatus = "".obs;
 
   // Tracker's Controller
-  PageController controller = PageController();
+  late final PageController controller;
 
   void _onPageSelected(int index) {
     selectedPage.value = index;
@@ -84,17 +93,61 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
         duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
   }
 
+  Future<void> _showShareOptions() async {
+    await MediaShare.showOptions(
+      context: context,
+      baseMedia: widget.media,
+      hydratedMedia: anilistData,
+      isManga: true,
+    );
+  }
+
+  Widget _buildActionIconButton({
+    required BuildContext context,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      height: 50,
+      width: 60,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.opaque(0.2),
+        ),
+        color: Theme.of(context).colorScheme.surfaceContainer.opaque(0.5),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Icon(icon),
+        ),
+      ),
+    );
+  }
+
   final sourceController = Get.find<SourceController>();
+  int _chapterRequestVersion = 0;
 
   String posterColor = '';
+
+  int _beginChapterRequest() => ++_chapterRequestVersion;
+  bool _isStaleChapterRequest(int requestId) =>
+      requestId != _chapterRequestVersion;
 
   @override
   void initState() {
     super.initState();
+    final initialPage = widget.initialTabIndex.clamp(0, 2).toInt();
+    selectedPage.value = initialPage;
+    controller = PageController(initialPage: initialPage);
     mediaService = widget.media.serviceType;
     Future.delayed(const Duration(milliseconds: 300), () {
       _checkMangaPresence();
     });
+
     _fetchAnilistData();
   }
 
@@ -104,9 +157,10 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
         .setCurrentMedia(widget.media.id.toString(), isManga: true);
     var data = mediaService.onlineService.currentMedia;
 
-    if (data.value.id != null || data.value.id != '') {
+    if ((data.value.id ?? '').isNotEmpty) {
       isListedManga.value = true;
-      currentManga = data;
+      currentManga.value = data.value;
+      currentManga.refresh();
     } else {
       isListedManga.value = false;
       currentManga.value = null;
@@ -123,8 +177,15 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
 
   Future<void> _fetchAnilistData() async {
     try {
-      final tempData = await mediaService.service
-          .fetchDetails(FetchDetailsParams(id: widget.media.id.toString()));
+      Media tempData;
+      try {
+        tempData = await mediaService.service
+            .fetchDetails(FetchDetailsParams(id: widget.media.id.toString()));
+      } catch (e) {
+        if (!e.toString().contains("dynamic")) rethrow;
+        tempData = await mediaService.service
+            .fetchDetails(FetchDetailsParams(id: widget.media.id.toString()));
+      }
       final isExtensions = mediaService == ServicesType.extensions;
 
       setState(() {
@@ -146,26 +207,48 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
         Logger.i("Data Loaded for media => ${widget.media.title}");
         _processExtensionData(tempData);
       } else {
+        _fetchSecondaryData(tempData);
         await _mapToService();
       }
     } catch (e, stackTrace) {
-      if (e.toString().contains("dynamic")) {
-        _fetchAnilistData();
-      }
       Logger.i(e.toString());
       Logger.i(stackTrace.toString());
     }
   }
 
-  Future<void> _mapToService() async {
+  Future<void> _fetchSecondaryData(Media tempData) async {
+    try {
+      if (mediaService.service is AnilistData) {
+        final anilistService = mediaService.service as AnilistData;
+        await anilistService.fetchSecondaryDetails(
+            widget.media.id.toString(), tempData);
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      Logger.i("Secondary Data Fetch Failed => $e");
+    }
+  }
+
+  Future<void> _mapToService({int? requestId}) async {
+    final activeRequestId = requestId ?? _beginChapterRequest();
+    chapterList?.clear();
     final key =
         '${sourceController.activeMangaSource.value?.id}-${anilistData?.id}-${mediaService.index}';
-    final savedTitle =
-        settingsController.preferences.get(key, defaultValue: null);
-    final mappedData = await mapMedia(formatTitles(anilistData!), searchedTitle,
-        savedTitle: savedTitle);
-    if (mappedData != null) {
-      await _fetchSourceDetails(mappedData);
+    final savedTitle = DynamicKeys.mappedMediaTitle.get<String?>(key, null);
+    final baseMedia = anilistData ?? widget.media;
+    final mappedData = await SourceMapper.mapMedia(
+        formatTitles(baseMedia), searchedTitle,
+        mediaId: widget.media.id.toString(),
+        type: ItemType.manga,
+        savedTitle: savedTitle,
+        synonyms: anilistData?.synonyms ?? []);
+    if (_isStaleChapterRequest(activeRequestId) || !mounted) {
+      return;
+    }
+    if (mappedData != null && mappedData.id.toString().isNotEmpty) {
+      await _fetchSourceDetails(mappedData, requestId: activeRequestId);
     }
   }
 
@@ -174,29 +257,40 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
     final convertedEpisodes = _convertChapters(chapters, tempData.title);
 
     chapterList?.value = convertedEpisodes;
-    searchedTitle.value = tempData.title;
+    searchedTitle.value = "Found: ${tempData.title}";
     setState(() {});
   }
 
-  Future<void> _fetchSourceDetails(Media media) async {
+  Future<void> _fetchSourceDetails(Media media, {int? requestId}) async {
+    final activeRequestId = requestId ?? _beginChapterRequest();
     try {
-      final episodeFuture = await sourceController
-          .activeMangaSource.value!.methods
-          .getDetail(DMedia.withUrl(media.id));
+      chapterList?.clear();
+      dynamic episodeFuture;
+      try {
+        episodeFuture = await sourceController.activeMangaSource.value!.methods
+            .getDetail(DMedia.withUrl(media.id));
+      } catch (e) {
+        if (!e.toString().contains("dynamic")) rethrow;
+        episodeFuture = await sourceController.activeMangaSource.value!.methods
+            .getDetail(DMedia.withUrl(media.id));
+      }
+      if (_isStaleChapterRequest(activeRequestId) || !mounted) {
+        return;
+      }
 
       final episodes = _convertChapters(
         episodeFuture.episodes!.reversed.toList(),
         episodeFuture.title ?? '',
       );
       chapterList?.value = episodes;
-      searchedTitle.value = media.title;
+      searchedTitle.value = "Found: ${media.title}";
 
       setState(() {});
-    } catch (e) {
-      if (e.toString().contains("dynamic")) {
-        _fetchSourceDetails(media);
+    } catch (e, s) {
+      if (_isStaleChapterRequest(activeRequestId) || !mounted) {
+        return;
       }
-      Logger.i(e.toString());
+      Logger.e(e.toString(), stackTrace: s);
     }
   }
 
@@ -241,149 +335,193 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
     );
   }
 
-  SingleChildScrollView _commonSaikouLayout(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 120),
-      child: Column(
-        children: [
-          GradientPoster(
-            data: anilistData,
-            tag: widget.tag,
-            posterUrl: widget.media.poster,
-          ),
-          if (anilistData != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20.0, 10, 20, 0),
-              child: Column(
-                children: [
-                  Obx(() {
-                    widget.media.serviceType.onlineService.isLoggedIn.value;
-                    return Row(
+  Widget _commonSaikouLayout(BuildContext context) {
+    return NestedScrollView(
+      headerSliverBuilder: (context, innerBoxIsScrolled) {
+        return [
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                GradientPoster(
+                  data: anilistData,
+                  tag: widget.tag,
+                  posterUrl: widget.media.poster,
+                ),
+                if (anilistData != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10.0, 10, 10, 0),
+                    child: Column(
                       children: [
-                        if (widget.media.serviceType !=
-                                ServicesType.extensions &&
-                            widget.media.serviceType.onlineService.isLoggedIn
-                                .value) ...[
-                          Expanded(
-                            child: Container(
-                              height: 50,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outline
-                                      .opaque(0.2),
-                                ),
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainer
-                                    .opaque(0.5),
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () {
-                                    if (widget.media.serviceType.onlineService
-                                        .isLoggedIn.value) {
-                                      showListEditorModal(context);
-                                    } else {
-                                      snackBar("You aren't logged in Genius.",
-                                          duration: 1000);
-                                    }
-                                  },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      AnymexText(
-                                        text: convertAniListStatus(
-                                            mangaStatus.value,
-                                            isManga: true),
-                                        variant: TextVariant.bold,
+                        Obx(() {
+                          widget
+                              .media.serviceType.onlineService.isLoggedIn.value;
+                          return Row(
+                            children: [
+                              if (widget.media.serviceType !=
+                                      ServicesType.extensions &&
+                                  widget.media.serviceType.onlineService
+                                      .isLoggedIn.value) ...[
+                                Expanded(
+                                  child: Container(
+                                    height: 50,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
                                         color: Theme.of(context)
                                             .colorScheme
-                                            .primary,
+                                            .outline
+                                            .opaque(0.2),
                                       ),
-                                    ],
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainer
+                                          .opaque(0.5),
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () {
+                                          if (widget.media.serviceType
+                                              .onlineService.isLoggedIn.value) {
+                                            showListEditorModal(context);
+                                          } else {
+                                            snackBar(
+                                                "You aren't logged in Genius.",
+                                                duration: 1000);
+                                          }
+                                        },
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            AnymexText(
+                                              text: convertAniListStatus(
+                                                  mangaStatus.value,
+                                                  isManga: true),
+                                              variant: TextVariant.bold,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Container(
-                            height: 50,
-                            width: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outline
-                                    .opaque(0.2),
-                              ),
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainer
-                                  .opaque(0.5),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                                const SizedBox(width: 7),
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: Icons.share_rounded,
+                                  onTap: _showShareOptions,
+                                ),
+                                const SizedBox(width: 7),
+                                if (CommunityService.votingEnabled)
+                                  RecommendIconButton(
+                                    media: anilistData!,
+                                    mediaItemType: ItemType.manga,
+                                    buttonBuilder: (onTap, icon) =>
+                                        _buildActionIconButton(
+                                      context: context,
+                                      icon: Icons.recommend_rounded,
+                                      onTap: onTap,
+                                    ),
+                                  ),
+                                if (CommunityService.votingEnabled)
+                                  const SizedBox(width: 7),
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: HugeIcons.strokeRoundedLibrary,
                                   onTap: () {
                                     showCustomListDialog(
                                       context,
                                       anilistData!,
                                     );
                                   },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: const Icon(
-                                      HugeIcons.strokeRoundedLibrary)),
-                            ),
-                          ),
-                        ] else ...[
-                          Expanded(
-                            child: AnymexButton2(
-                              onTap: () {
-                                showCustomListDialog(context, anilistData!);
-                              },
-                              label: 'Add to Library',
-                              icon: HugeIcons.strokeRoundedLibrary,
-                            ),
-                          )
-                        ]
+                                ),
+                              ] else ...[
+                                _buildActionIconButton(
+                                  context: context,
+                                  icon: Icons.share_rounded,
+                                  onTap: _showShareOptions,
+                                ),
+                                const SizedBox(width: 7),
+                                Expanded(
+                                  child: AnymexButton2(
+                                    onTap: () {
+                                      showCustomListDialog(
+                                          context, anilistData!);
+                                    },
+                                    label: 'Add to Library',
+                                    icon: HugeIcons.strokeRoundedLibrary,
+                                  ),
+                                )
+                              ]
+                            ],
+                          );
+                        }),
+                        const SizedBox(height: 10),
+                        _buildProgressContainer(context)
                       ],
-                    );
-                  }),
-                  const SizedBox(height: 10),
-                  _buildProgressContainer(context)
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(
+                    height: 400,
+                    child: Center(child: AnymexProgressIndicator()),
+                  )
                 ],
-              ),
+              ],
             ),
-          ] else ...[
-            const SizedBox(
-              height: 400,
-              child: Center(child: AnymexProgressIndicator()),
-            )
-          ],
-          ExpandablePageView(
-            physics: const BouncingScrollPhysics(),
-            controller: controller,
-            onPageChanged: (index) {
-              selectedPage.value = index;
-            },
-            children: [
-              if (anilistData != null)
-                _buildCommonInfo(context)
-              else
-                const SizedBox.shrink(),
-              _buildChapterSection(context),
-              _buildCommentsSection(context),
-            ],
           ),
+        ];
+      },
+      body: PageView(
+        physics: const BouncingScrollPhysics(),
+        controller: controller,
+        onPageChanged: (index) {
+          selectedPage.value = index;
+        },
+        children: [
+          _buildInfoPageBody(context),
+          _buildChapterPageBody(context),
+          _buildCommentsPageBody(context),
         ],
       ),
+    );
+  }
+
+  Widget _buildInfoPageBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
+      child: anilistData != null
+          ? _buildCommonInfo(context)
+          : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildChapterPageBody(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        ChapterSection(
+          searchedTitle: searchedTitle,
+          anilistData: anilistData ?? widget.media,
+          chapterList: chapterList!,
+          sourceController: sourceController,
+          mapToAnilist: () => _mapToService(),
+          getDetailsFromSource: (media) => _fetchSourceDetails(media),
+          showWrongTitleModal: showWrongTitleModal,
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+      ],
+    );
+  }
+
+  Widget _buildCommentsPageBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
+      child: _buildCommentsSection(context),
     );
   }
 
@@ -486,8 +624,8 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
       anilistData: anilistData ?? widget.media,
       chapterList: chapterList!,
       sourceController: sourceController,
-      mapToAnilist: _mapToService,
-      getDetailsFromSource: _fetchSourceDetails,
+      mapToAnilist: () => _mapToService(),
+      getDetailsFromSource: (media) => _fetchSourceDetails(media),
       showWrongTitleModal: showWrongTitleModal,
     );
   }
@@ -497,11 +635,15 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Column(
             children: [
               const SizedBox(height: 20),
-              MangaStats(data: anilistData!),
+              MangaStats(
+                data: anilistData!,
+                friendsWatching: anilistData?.friendsWatching,
+                totalEpisodes: anilistData?.totalChapters,
+              ),
               const SizedBox(height: 20),
             ],
           ),
@@ -564,14 +706,14 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
                       20.multiplyRadius(),
                     )),
                 child: NavBarItem(
-                    isSelected: false,
-                    isVertical: true,
-                    onTap: () {
-                      Get.back();
-                    },
-                    selectedIcon: Iconsax.back_square,
-                    unselectedIcon: IconlyBold.arrow_left,
-                    label: "Back"),
+                  isSelected: false,
+                  isVertical: true,
+                  onTap: () {
+                    Get.back();
+                  },
+                  selectedIcon: Iconsax.back_square,
+                  unselectedIcon: IconlyBold.arrow_left,
+                ),
               ),
               const SizedBox(height: 10),
               ResponsiveNavBar(
@@ -643,14 +785,19 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
           currentAnime: currentManga,
           isManga: true,
           media: anilistData ?? widget.media,
-          onUpdate: (id, score, status, progress) async {
+          onUpdate: (id, score, status, progress, season, startedAt,
+              completedAt, isPrivate) async {
             await mediaService.onlineService.updateListEntry(
                 UpdateListEntryParams(
                     listId: id,
                     isAnime: false,
                     score: score,
                     status: status,
-                    progress: progress));
+                    progress: progress,
+                    season: season,
+                    startedAt: startedAt,
+                    completedAt: completedAt,
+                    isPrivate: isPrivate));
             setState(() {});
           },
           onDelete: (s) async {
@@ -658,7 +805,7 @@ class _MangaDetailsPageState extends State<MangaDetailsPage> {
                 mediaService.onlineService.currentMedia.value.mediaListId;
             await mediaService.onlineService
                 .deleteListEntry(id!, isAnime: false);
-            setState(() {});
+            _checkMangaPresence();
           },
         );
       },

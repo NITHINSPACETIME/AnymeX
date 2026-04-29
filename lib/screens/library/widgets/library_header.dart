@@ -1,3 +1,4 @@
+import 'package:anymex/controllers/offline/offline_storage_controller.dart';
 import 'package:anymex/controllers/service_handler/service_handler.dart';
 import 'package:anymex/screens/library/controller/library_controller.dart';
 import 'package:anymex/screens/library/editor/history_editor.dart';
@@ -9,7 +10,7 @@ import 'package:anymex/widgets/custom_widgets/anymex_bottomsheet.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_chip.dart';
 import 'package:anymex/widgets/custom_widgets/custom_expansion_tile.dart';
 import 'package:anymex/widgets/custom_widgets/custom_text.dart';
-import 'package:dartotsu_extension_bridge/Models/Source.dart';
+import 'package:anymex_extension_runtime_bridge/Models/Source.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -205,7 +206,7 @@ class LibraryHeader extends StatelessWidget {
     if (serviceHandler.serviceType.value == ServicesType.simkl) {
       switch (itemType) {
         case ItemType.anime:
-          return 'Movies & Series';
+          return 'Movies & Series & Animes';
         case ItemType.manga:
           return 'Series';
         case ItemType.novel:
@@ -236,62 +237,77 @@ class LibraryHeader extends StatelessWidget {
                     AnymexExpansionTile(
                         title: 'Sort By',
                         initialExpanded: true,
-                        content: Column(children: [
-                          Row(
-                            children: [
-                              _SortBox(
-                                title: 'Title',
-                                currentSort: controller.currentSort,
-                                sortType: SortType.title,
-                                isAscending: controller.isAscending,
-                                onTap: () {
-                                  controller.handleSortChange(SortType.title);
-                                  setState(() {});
-                                },
-                                icon: Icons.sort_by_alpha,
+                        content: Obx(() {
+                          final isHistory =
+                              controller.selectedListIndex.value == -1;
+                          return Column(children: [
+                            Row(
+                              children: [
+                                _SortBox(
+                                  title: 'Title',
+                                  currentSort: controller.currentSort.value,
+                                  sortType: SortType.title,
+                                  isAscending: controller.isAscending.value,
+                                  onTap: () {
+                                    controller.handleSortChange(SortType.title);
+                                  },
+                                  icon: Icons.sort_by_alpha,
+                                ),
+                                if (!isHistory)
+                                  _SortBox(
+                                    title: 'Last Added',
+                                    currentSort: controller.currentSort.value,
+                                    sortType: SortType.lastAdded,
+                                    isAscending: controller.isAscending.value,
+                                    onTap: () {
+                                      controller
+                                          .handleSortChange(SortType.lastAdded);
+                                    },
+                                    icon: Icons.add_circle_outline,
+                                  ),
+                                if (isHistory)
+                                  _SortBox(
+                                    title: _getLastReadTitle(),
+                                    currentSort: controller.currentSort.value,
+                                    sortType: SortType.lastRead,
+                                    isAscending: controller.isAscending.value,
+                                    onTap: () {
+                                      controller
+                                          .handleSortChange(SortType.lastRead);
+                                    },
+                                    icon: _getLastReadIcon(),
+                                  ),
+                              ],
+                            ),
+                            if (!isHistory)
+                              Row(
+                                children: [
+                                  _SortBox(
+                                    title: _getLastReadTitle(),
+                                    currentSort: controller.currentSort.value,
+                                    sortType: SortType.lastRead,
+                                    isAscending: controller.isAscending.value,
+                                    onTap: () {
+                                      controller
+                                          .handleSortChange(SortType.lastRead);
+                                    },
+                                    icon: _getLastReadIcon(),
+                                  ),
+                                  _SortBox(
+                                    title: 'Rating',
+                                    currentSort: controller.currentSort.value,
+                                    sortType: SortType.rating,
+                                    isAscending: controller.isAscending.value,
+                                    onTap: () {
+                                      controller
+                                          .handleSortChange(SortType.rating);
+                                    },
+                                    icon: Icons.star_border,
+                                  ),
+                                ],
                               ),
-                              _SortBox(
-                                title: 'Last Added',
-                                currentSort: controller.currentSort,
-                                sortType: SortType.lastAdded,
-                                isAscending: controller.isAscending,
-                                onTap: () {
-                                  controller
-                                      .handleSortChange(SortType.lastAdded);
-                                  setState(() {});
-                                },
-                                icon: Icons.add_circle_outline,
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              _SortBox(
-                                title: _getLastReadTitle(),
-                                currentSort: controller.currentSort,
-                                sortType: SortType.lastRead,
-                                isAscending: controller.isAscending,
-                                onTap: () {
-                                  controller
-                                      .handleSortChange(SortType.lastRead);
-                                  setState(() {});
-                                },
-                                icon: _getLastReadIcon(),
-                              ),
-                              _SortBox(
-                                title: 'Rating',
-                                currentSort: controller.currentSort,
-                                sortType: SortType.rating,
-                                isAscending: controller.isAscending,
-                                onTap: () {
-                                  controller.handleSortChange(SortType.rating);
-                                  setState(() {});
-                                },
-                                icon: Icons.star_border,
-                              ),
-                            ],
-                          ),
-                        ])),
+                          ]);
+                        })),
                     AnymexExpansionTile(
                         title: 'Grid',
                         content: Column(
@@ -495,77 +511,104 @@ class ChipTabs extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Obx(() {
-          final lists = controller.typeBuilder(controller.type.value,
-              animeValue: controller.customListData,
-              mangaValue: controller.customListDataManga,
-              novelValue: controller.customListNovelData);
-          final historyCount = controller.typeBuilder(controller.type.value,
-              animeValue: controller.historyData.length,
-              mangaValue: controller.historyDataManga.length,
-              novelValue: controller.historyDataNovel.length);
+          controller.selectedListIndex.value;
+          return StreamBuilder<List<dynamic>>(
+            stream: controller.offlineStorage
+                .watchCustomLists(controller.type.value)
+                .map((lists) => lists
+                    .where(
+                        (l) => l.mediaTypeIndex == controller.type.value.index)
+                    .toList()),
+            builder: (context, customListSnapshot) {
+              return StreamBuilder<List<dynamic>>(
+                stream: controller.getHistoryStream(),
+                builder: (context, historySnapshot) {
+                  final customLists = customListSnapshot.data ?? [];
+                  final historyCount = historySnapshot.data?.length ?? 0;
 
-          return Row(children: [
-            InkWell(
-              onLongPress: () => Get.to(() => const HistoryEditor()),
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: AnymexIconChip(
-                  icon: Row(
-                    children: [
-                      Icon(
-                          controller.selectedListIndex.value == -1
-                              ? Iconsax.clock5
-                              : Iconsax.clock,
-                          color: controller.selectedListIndex.value == -1
-                              ? context.colors.onPrimary
-                              : context.colors.onSurfaceVariant),
-                      5.width(),
-                      AnymexText(text: '($historyCount)')
-                    ],
-                  ),
-                  isSelected: controller.selectedListIndex.value == -1,
-                  onSelected: (selected) {
-                    if (selected) {
-                      controller.selectList(-1);
-                    }
-                  },
-                ),
-              ),
-            ),
-            ...List.generate(
-              lists.length,
-              (index) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: AnymexChip(
-                  label:
-                      '${lists[index].listName} (${lists[index].listData.length})',
-                  isSelected: controller.selectedListIndex.value == index,
-                  onSelected: (selected) {
-                    if (selected) {
-                      controller.selectList(index);
-                    }
-                  },
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: AnymexIconChip(
-                icon: Row(
-                  children: [
-                    Icon(Iconsax.edit, color: context.colors.onSurfaceVariant),
-                    5.width(),
-                    const AnymexText(text: 'Edit')
-                  ],
-                ),
-                isSelected: false,
-                onSelected: (selected) {
-                  navigate(
-                      () => CustomListsEditor(type: controller.type.value));
+                  return Row(children: [
+                    InkWell(
+                      onLongPress: () => Get.to(
+                          () => HistoryEditor(type: controller.type.value)),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: AnymexIconChip(
+                          icon: Row(
+                            children: [
+                              Icon(
+                                  controller.selectedListIndex.value == -1
+                                      ? Iconsax.clock5
+                                      : Iconsax.clock,
+                                  color:
+                                      controller.selectedListIndex.value == -1
+                                          ? context.colors.onPrimary
+                                          : context.colors.onSurfaceVariant),
+                              5.width(),
+                              AnymexText(text: '($historyCount)')
+                            ],
+                          ),
+                          isSelected: controller.selectedListIndex.value == -1,
+                          onSelected: (selected) {
+                            if (selected) {
+                              controller.selectList(-1);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    ...List.generate(
+                      customLists.length,
+                      (index) {
+                        final list = customLists[index];
+                        final listName = list.listName ?? '';
+
+                        return StreamBuilder<CustomListData>(
+                          stream: controller.offlineStorage.watchCustomListData(
+                              listName, controller.type.value),
+                          builder: (context, listDataSnapshot) {
+                            final itemCount =
+                                listDataSnapshot.data?.listData.length ?? 0;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: AnymexChip(
+                                label: '$listName ($itemCount)',
+                                isSelected:
+                                    controller.selectedListIndex.value == index,
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    controller.selectList(index);
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: AnymexIconChip(
+                        icon: Row(
+                          children: [
+                            Icon(Iconsax.edit,
+                                color: context.colors.onSurfaceVariant),
+                            5.width(),
+                            const AnymexText(text: 'Edit')
+                          ],
+                        ),
+                        isSelected: false,
+                        onSelected: (selected) {
+                          navigate(() =>
+                              CustomListsEditor(type: controller.type.value));
+                        },
+                      ),
+                    ),
+                  ]);
                 },
-              ),
-            ),
-          ]);
+              );
+            },
+          );
         }),
       ),
     );
@@ -704,7 +747,7 @@ class _SegmentedControl extends StatelessWidget {
     if (serviceHandler.serviceType.value == ServicesType.simkl) {
       switch (itemType) {
         case ItemType.anime:
-          return 'Movies & Series';
+          return 'Movies & Series & Animes';
         case ItemType.manga:
           return 'Series';
         case ItemType.novel:
