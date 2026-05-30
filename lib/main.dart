@@ -31,7 +31,6 @@ import 'package:anymex/utils/external_font_loader.dart';
 import 'package:anymex/utils/logger.dart';
 import 'package:anymex/utils/deeplink.dart';
 import 'package:anymex/utils/register_protocol/register_protocol.dart';
-import 'package:anymex/widgets/adaptive_wrapper.dart';
 import 'package:anymex/widgets/animation/more_page_transitions.dart';
 import 'package:anymex/widgets/common/glow.dart';
 import 'package:anymex/widgets/common/navbar.dart';
@@ -56,6 +55,7 @@ import 'package:iconsax/iconsax.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:isar_community/isar.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:anymex/utils/torrent/torrent_stream_resolver.dart';
 import 'package:provider/provider.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:window_manager/window_manager.dart';
@@ -84,8 +84,28 @@ class MyCustomScrollBehavior extends MaterialScrollBehavior {
       };
 }
 
-void initDeepLinkListener() async {
-  if (Platform.isLinux) return;
+void initDeepLinkListener(List<String> args) async {
+  if (args.isNotEmpty) {
+    for (final arg in args) {
+      try {
+        final uri = Uri.parse(arg);
+        final schemes = {
+          'dar',
+          'anymex',
+          'sugoireads',
+          'mangayomi',
+          'cloudstreamrepo',
+          'sora',
+          'tachiyomi',
+          'aniyomi'
+        };
+        if (uri.hasScheme && schemes.contains(uri.scheme.toLowerCase())) {
+          Deeplink.handleDeepLink(uri);
+          break;
+        }
+      } catch (_) {}
+    }
+  }
 
   try {
     final initialUri = await appLinks.getInitialLink();
@@ -120,14 +140,14 @@ void main(List<String> args) async {
     }
 
     if (Platform.isWindows) {
-      ['dar', 'anymex', 'sugoireads', 'mangayomi']
+      ['dar', 'anymex', 'sugoireads', 'mangayomi', 'cloudstreamrepo', 'sora', 'tachiyomi', 'aniyomi']
           .forEach(registerProtocolHandler);
     }
     await Database().init();
     HttpOverrides.global = MyHttpoverrides();
 
     _initializeGetxController();
-    initDeepLinkListener();
+    initDeepLinkListener(args);
     initializeDateFormatting();
     MediaKit.ensureInitialized();
     if (!Platform.isAndroid && !Platform.isIOS) {
@@ -188,6 +208,12 @@ void _initializeGetxController() async {
   Get.put(DownloadController(), permanent: true);
   Get.lazyPut(() => CacheController());
   await StorageManagerService().enforceImageCacheLimit();
+
+  TorrentStreamResolver.initialize().then((_) {
+    debugPrint('Torrent engine initialized');
+  }).catchError((e) {
+    debugPrint('Torrent engine init failed (non-critical): $e');
+  });
 }
 
 class MainApp extends StatefulWidget {

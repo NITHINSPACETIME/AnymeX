@@ -3,6 +3,7 @@ import 'package:anymex/controllers/settings/methods.dart';
 import 'package:anymex/database/isar_models/chapter.dart';
 import 'package:anymex/screens/novel/details/controller/details_controller.dart';
 import 'package:anymex/utils/function.dart';
+import 'package:anymex/widgets/animation/animations.dart';
 import 'package:anymex/widgets/common/glow.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_button.dart';
 import 'package:anymex/widgets/custom_widgets/anymex_progress.dart';
@@ -17,47 +18,68 @@ class ChapterListItem extends StatelessWidget {
   final NovelDetailsController controller;
   final VoidCallback onTap;
   final Chapter chapter;
+  final Chapter? readChapter;
+  final Chapter? continueChapter;
 
   const ChapterListItem({
     super.key,
     required this.onTap,
     required this.controller,
     required this.chapter,
+    this.readChapter,
+    this.continueChapter,
   });
 
   @override
   Widget build(BuildContext context) {
     final anilistData = controller.media.value;
-    final readChapter = controller.offlineMedia.value?.currentChapter;
     final offlineStorage = Get.find<OfflineStorageController>();
 
     final savedChaps =
         offlineStorage.getReadChapter(anilistData.id, chapter.number!);
-    final currentChapterLink = readChapter?.link ?? '';
+    final currentChapterLink = continueChapter?.link ?? '';
     final isSelected = chapter.link == currentChapterLink;
-    final alreadyRead = chapter.number! < (readChapter?.number ?? 1) ||
-        ((savedChaps?.pageNumber ?? 1) == (savedChaps?.totalPages ?? 100));
+    final _novSavedPage = savedChaps?.pageNumber;
+    final _novSavedTotal = savedChaps?.totalPages;
+    final _isPageComplete = _novSavedPage != null &&
+        _novSavedTotal != null &&
+        _novSavedTotal > 0 &&
+        (_novSavedPage >= _novSavedTotal ||
+            _novSavedPage >= _novSavedTotal - 1 ||
+            (_novSavedPage / _novSavedTotal) >= 0.95);
+    final alreadyRead = chapter.number! < (readChapter?.number ?? 0.0) ||
+        _isPageComplete ||
+        (savedChaps != null &&
+            savedChaps.currentOffset != null &&
+            savedChaps.maxOffset != null &&
+            savedChaps.maxOffset! > 0 &&
+            (savedChaps.currentOffset! / savedChaps.maxOffset!) >= 0.95);
 
-    return AnymexOnTap(
-      onTap: onTap,
-      child: Opacity(
-        opacity: alreadyRead ? 0.5 : 1,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? context.colors.secondary.withAlpha(100)
-                : Theme.of(context).colorScheme.secondaryContainer.opaque(0.4),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              _buildChapterProgress(context, savedChaps ?? Chapter()),
-              const SizedBox(width: 15),
-              _buildChapterInfo(context, savedChaps),
-              const Spacer(),
-              _buildReadButton(context),
-            ],
+    return StaggeredAnimatedItemWrapper(
+      child: AnymexOnTap(
+        onTap: onTap,
+        child: Opacity(
+          opacity: alreadyRead ? 0.5 : 1,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? context.colors.secondary.withAlpha(100)
+                  : Theme.of(context)
+                      .colorScheme
+                      .secondaryContainer
+                      .opaque(0.4),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                _buildChapterProgress(context, savedChaps ?? Chapter()),
+                const SizedBox(width: 15),
+                _buildChapterInfo(context, savedChaps),
+                const Spacer(),
+                _buildReadButton(context),
+              ],
+            ),
           ),
         ),
       ),
@@ -133,6 +155,12 @@ class ChapterListItem extends StatelessWidget {
     final progressText = savedChaps?.pageNumber != null
         ? ' (${savedChaps?.pageNumber}/${savedChaps?.totalPages})'
         : '';
+    final chapterMetaLabel =
+        (chapter.scanlator?.isNotEmpty ?? false) ? chapter.scanlator! : '';
+    final chapterMetaText = [
+      if (chapter.releaseDate?.isNotEmpty ?? false) calcTime(chapter.releaseDate!),
+      if (chapterMetaLabel.isNotEmpty) chapterMetaLabel,
+    ].join(' • ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,7 +181,9 @@ class ChapterListItem extends StatelessWidget {
           width: getResponsiveSize(context,
               mobileSize: Get.width * 0.4, desktopSize: 200),
           child: AnymexText(
-            text: calcTime(chapter.releaseDate ?? '0'),
+            text: chapterMetaText.isNotEmpty
+                ? chapterMetaText
+                : calcTime(chapter.releaseDate ?? '0'),
             color: context.colors.inverseSurface.opaque(0.9),
             fontStyle: FontStyle.italic,
             maxLines: 2,

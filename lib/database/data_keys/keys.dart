@@ -150,6 +150,7 @@ enum SourceKeys {
   animeExtensionOrder,
   mangaExtensionOrder,
   novelExtensionOrder,
+  extensionsEnabled,
 }
 
 enum PluginKeys {
@@ -238,6 +239,7 @@ enum PlayerSettingsKeys {
   subtitleOutlineType,
   playerMenuAnimation,
   hardwareDecoder,
+  preferredSubtitleLanguage,
 }
 
 enum UISettingsKeys {
